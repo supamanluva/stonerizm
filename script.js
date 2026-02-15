@@ -2167,6 +2167,7 @@ class SongSequencer {
 
     playSong(index) {
         if (index < 0 || index >= SONGS.length) return;
+        console.log('[STONERIZM] playSong:', index, SONGS[index].name);
         this.currentSong = index;
         this.currentSection = 0;
         this.currentRepeat = 0;
@@ -2450,7 +2451,9 @@ window.addEventListener('keydown', (e) => {
                     const btn = document.createElement('button');
                     btn.className = 'song-btn' + (i === 0 ? ' active' : '');
                     btn.textContent = song.name;
-                    btn.addEventListener('click', () => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        console.log('[STONERIZM] Song button clicked:', i, song.name, 'isPlaying:', sequencer?.isPlaying);
                         if (sequencer && sequencer.isPlaying) sequencer.playSong(i);
                     });
                     songList.appendChild(btn);
@@ -2495,6 +2498,10 @@ window.addEventListener('keydown', (e) => {
     if (key === 'n' && isDoom && sequencer) sequencer.nextSong();
     if (key === 'p' && isDoom && sequencer) sequencer.prevSong();
     if (key === 's' && isDoom && sequencer) sequencer.toggleShuffle();
+    // Number keys 5-9 select songs directly (5 = song 0, 9 = song 4)
+    if (key >= '5' && key <= '9' && isDoom && sequencer && sequencer.isPlaying) {
+        sequencer.playSong(parseInt(key) - 5);
+    }
 });
 
 // ===== DISPLAY SHADER =====

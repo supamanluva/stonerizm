@@ -149,7 +149,7 @@ body.doom-active #controls p {
     gap: 8px;
     justify-content: center;
     flex-wrap: wrap;
-    max-width: 600px;
+    max-width: 900px;
     margin: 0 auto 10px;
 }
 
