@@ -680,7 +680,7 @@ class RealisticGuitar {
         this.delayWet.gain.value = 0.08;
 
         this.masterGain = ctx.createGain();
-        this.masterGain.gain.value = 0.22;
+        this.masterGain.gain.value = 0.16;
 
         // Wire the chain
         this.inputGain.connect(this.preampDrive);
@@ -739,7 +739,7 @@ class RealisticGuitar {
         const noteGain = this.ctx.createGain();
         const attack = palmMute ? 0.008 : 0.015;
         const decay = palmMute ? 0.04 : 0.08;
-        const sustainLevel = palmMute ? 0.12 : 0.18;
+        const sustainLevel = palmMute ? 0.09 : 0.13;
         const release = palmMute ? 0.03 : 0.12;
         const sustainTime = Math.max(0.01, duration - attack - decay - release);
 
@@ -868,7 +868,7 @@ class RealisticGuitar {
         this.delayFB.gain.value = 0.1;
         this.delayWet.gain.value = 0.03;
         this.reverbWet.gain.value = 0.06;
-        this.masterGain.gain.value = 0.28;
+        this.masterGain.gain.value = 0.20;
     }
 
     setOmCleanTone() {
@@ -883,14 +883,46 @@ class RealisticGuitar {
         this.delayFB.gain.value = 0.3;
         this.delayWet.gain.value = 0.15;
         this.reverbWet.gain.value = 0.25;
-        this.masterGain.gain.value = 0.12;
+        this.masterGain.gain.value = 0.08;
+    }
+
+    setFuzzTone() {
+        // Gnarly octave fuzz - Think Big Muff + Octavia
+        // Hard asymmetric clipping with octave-up rectification character
+        const n = 44100, curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+            const x = (i * 2) / n - 1;
+            // Full-wave rectification for octave-up + hard clip
+            const rect = Math.abs(x);
+            const hardClip = Math.max(-0.8, Math.min(0.8, x * 12.0));
+            // Mix rectified (octave) with hard-clipped for gnarly fuzz
+            curve[i] = hardClip * 0.6 + (rect * 2.0 - 1.0) * 0.4;
+            curve[i] = Math.max(-1.0, Math.min(1.0, curve[i]));
+        }
+        this.preampDrive.curve = curve;
+        // Second stage: softer saturation to round out the harsh edges
+        this.preampDrive2.curve = this._tubeSaturation(4.0);
+        // Scooped mids, boosted bass & presence for that velcro fuzz character
+        this.tsBass.gain.value = 7;
+        this.tsMid.gain.value = -5;
+        this.tsTreble.gain.value = -6;
+        this.tsPresence.gain.value = 5;
+        this.cabLP.frequency.value = 3800;
+        this.cabHP.frequency.value = 90;
+        this.cabResonance.gain.value = 6;
+        // Minimal delay, some reverb for space
+        this.delay.delayTime.value = 0.30;
+        this.delayFB.gain.value = 0.08;
+        this.delayWet.gain.value = 0.03;
+        this.reverbWet.gain.value = 0.08;
+        this.masterGain.gain.value = 0.18;
     }
 
     fadeOut() { this.masterGain.gain.linearRampToValueAtTime(0.0001, this.ctx.currentTime + 0.5); }
     fadeIn() {
         this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
         this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
-        this.masterGain.gain.linearRampToValueAtTime(0.22, this.ctx.currentTime + 0.5);
+        this.masterGain.gain.linearRampToValueAtTime(0.16, this.ctx.currentTime + 0.5);
     }
 }
 
@@ -932,7 +964,7 @@ class BassGuitar {
         this.comp.release.value = 0.15;
 
         this.masterGain = ctx.createGain();
-        this.masterGain.gain.value = 0.35;
+        this.masterGain.gain.value = 0.22;
 
         this.drive.connect(this.bassBoost);
         this.bassBoost.connect(this.midCut);
@@ -947,8 +979,8 @@ class BassGuitar {
 
         const noteGain = this.ctx.createGain();
         noteGain.gain.setValueAtTime(0.0001, startTime);
-        noteGain.gain.linearRampToValueAtTime(0.25, startTime + 0.01);
-        noteGain.gain.setValueAtTime(0.2, startTime + Math.max(0.02, duration - 0.08));
+        noteGain.gain.linearRampToValueAtTime(0.18, startTime + 0.01);
+        noteGain.gain.setValueAtTime(0.15, startTime + Math.max(0.02, duration - 0.08));
         noteGain.gain.linearRampToValueAtTime(0.0001, startTime + duration);
 
         // Fundamental sine
@@ -1001,7 +1033,7 @@ class BassGuitar {
     fadeIn() {
         this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
         this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
-        this.masterGain.gain.linearRampToValueAtTime(0.35, this.ctx.currentTime + 0.5);
+        this.masterGain.gain.linearRampToValueAtTime(0.22, this.ctx.currentTime + 0.5);
     }
 
     setOmTone() {
@@ -1012,7 +1044,7 @@ class BassGuitar {
         this.bassBoost.gain.value = 10;
         this.midCut.gain.value = -1;
         this.cabLP.frequency.value = 3500;
-        this.masterGain.gain.value = 0.5;
+        this.masterGain.gain.value = 0.30;
     }
 
     setSleepTone() {
@@ -1023,7 +1055,7 @@ class BassGuitar {
         this.bassBoost.gain.value = 8;
         this.midCut.gain.value = -6;
         this.cabLP.frequency.value = 2500;
-        this.masterGain.gain.value = 0.42;
+        this.masterGain.gain.value = 0.28;
     }
 
     setDoomTone() {
@@ -1033,7 +1065,21 @@ class BassGuitar {
         this.bassBoost.gain.value = 6;
         this.midCut.gain.value = -4;
         this.cabLP.frequency.value = 3000;
-        this.masterGain.gain.value = 0.35;
+        this.masterGain.gain.value = 0.22;
+    }
+
+    setFuzzTone() {
+        // Massive fuzz bass - woolly Muff-style overdrive
+        const n = 44100, curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+            const x = (i*2)/n - 1;
+            curve[i] = Math.tanh(x * 6.0) * 0.85 + Math.sin(x * Math.PI) * 0.15;
+        }
+        this.drive.curve = curve;
+        this.bassBoost.gain.value = 9;
+        this.midCut.gain.value = -3;
+        this.cabLP.frequency.value = 2800;
+        this.masterGain.gain.value = 0.26;
     }
 }
 
@@ -1204,7 +1250,7 @@ class SpaceSynth {
     fadeIn(time = 2.0) {
         this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
         this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
-        this.masterGain.gain.linearRampToValueAtTime(0.5, this.ctx.currentTime + time);
+        this.masterGain.gain.linearRampToValueAtTime(0.32, this.ctx.currentTime + time);
     }
 
     fadeOut(time = 2.0) {
@@ -1235,12 +1281,12 @@ class DoomDrums {
         this.roomVerb.buffer = roomBuf;
 
         this.roomWet = ctx.createGain();
-        this.roomWet.gain.value = 0.15;
+        this.roomWet.gain.value = 0.10;
         this.roomVerb.connect(this.roomWet);
         this.roomWet.connect(dest);
 
         this.dryGain = ctx.createGain();
-        this.dryGain.gain.value = 0.45;
+        this.dryGain.gain.value = 0.32;
         this.dryGain.connect(dest);
         this.dryGain.connect(this.roomVerb);
 
@@ -1260,11 +1306,11 @@ class DoomDrums {
         sub.frequency.exponentialRampToValueAtTime(20, time + 0.4);
 
         const bodyG = this.ctx.createGain();
-        bodyG.gain.setValueAtTime(0.9, time);
+        bodyG.gain.setValueAtTime(0.55, time);
         bodyG.gain.exponentialRampToValueAtTime(0.001, time + 0.5);
 
         const subG = this.ctx.createGain();
-        subG.gain.setValueAtTime(0.7, time);
+        subG.gain.setValueAtTime(0.40, time);
         subG.gain.exponentialRampToValueAtTime(0.001, time + 0.6);
 
         // Click transient
@@ -1275,7 +1321,7 @@ class DoomDrums {
         const clickSrc = this.ctx.createBufferSource();
         clickSrc.buffer = clickBuf;
         const clickG = this.ctx.createGain();
-        clickG.gain.value = 0.5;
+        clickG.gain.value = 0.3;
         const clickF = this.ctx.createBiquadFilter();
         clickF.type = 'highpass';
         clickF.frequency.value = 3000;
@@ -1304,7 +1350,7 @@ class DoomDrums {
         body.frequency.exponentialRampToValueAtTime(130, time + 0.08);
 
         const bodyG = this.ctx.createGain();
-        bodyG.gain.setValueAtTime(0.5, time);
+        bodyG.gain.setValueAtTime(0.32, time);
         bodyG.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
 
         // Noise buzz
@@ -1314,7 +1360,7 @@ class DoomDrums {
         for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (nd.length * 0.3));
         const nSrc = this.ctx.createBufferSource();
         nSrc.buffer = nBuf;
-        const nG = this.ctx.createGain(); nG.gain.value = 0.4;
+        const nG = this.ctx.createGain(); nG.gain.value = 0.25;
         const nHP = this.ctx.createBiquadFilter();
         nHP.type = 'highpass'; nHP.frequency.value = 2000;
         const nBP = this.ctx.createBiquadFilter();
@@ -1420,13 +1466,13 @@ class DoomDrums {
     }
 
     setSpaceRoom() {
-        this.roomWet.gain.value = 0.3;
-        this.dryGain.gain.value = 0.35;
+        this.roomWet.gain.value = 0.20;
+        this.dryGain.gain.value = 0.28;
     }
 
     setDoomRoom() {
-        this.roomWet.gain.value = 0.15;
-        this.dryGain.gain.value = 0.45;
+        this.roomWet.gain.value = 0.10;
+        this.dryGain.gain.value = 0.32;
     }
 }
 
@@ -1452,7 +1498,7 @@ const SONGS = [
         sections: [
             {
                 name: "DOOM AWAKENS",
-                genre: 0.0, bpm: 44, repeats: 3, visualMode: 0,
+                genre: 0.0, bpm: 56, repeats: 3, visualMode: 0,
                 guitar: [
                     { f: N.D1, dur: 4, pm: true },
                     { f: N.R, dur: 1 },
@@ -1475,7 +1521,7 @@ const SONGS = [
             },
             {
                 name: "MAMMOTH MARCH",
-                genre: 0.1, bpm: 46, repeats: 3, visualMode: 1,
+                genre: 0.1, bpm: 58, repeats: 3, visualMode: 1, style: 'fuzz',
                 guitar: [
                     { f: N.D1, dur: 3 }, { f: N.F1, dur: 1 },
                     { f: N.G1, dur: 2 }, { f: N.D1, dur: 2 },
@@ -1494,7 +1540,7 @@ const SONGS = [
             },
             {
                 name: "ASCENDING",
-                genre: 0.35, bpm: 50, repeats: 3, visualMode: 2,
+                genre: 0.35, bpm: 62, repeats: 3, visualMode: 2,
                 guitar: [
                     { f: N.D2, dur: 2 }, { f: N.F2, dur: 2 },
                     { f: N.G2, dur: 2 }, { f: N.A2, dur: 2 },
@@ -1511,7 +1557,7 @@ const SONGS = [
             },
             {
                 name: "COSMIC DRIFT",
-                genre: 0.7, bpm: 72, repeats: 4, visualMode: 3,
+                genre: 0.7, bpm: 82, repeats: 4, visualMode: 3,
                 guitar: [
                     { f: N.D3, dur: 2 }, { f: N.G3, dur: 1 }, { f: N.A3, dur: 1 },
                     { f: N.Bb3, dur: 2 }, { f: N.A3, dur: 1 }, { f: N.G3, dur: 1 },
@@ -1530,7 +1576,7 @@ const SONGS = [
             },
             {
                 name: "NEBULA SEQUENCE",
-                genre: 0.9, bpm: 80, repeats: 4, visualMode: 3,
+                genre: 0.9, bpm: 88, repeats: 4, visualMode: 3,
                 guitar: [
                     { f: N.A3, dur: 1 }, { f: N.B3, dur: 1 },
                     { f: N.D4, dur: 2 }, { f: N.E4, dur: 1 }, { f: N.D4, dur: 1 },
@@ -1551,7 +1597,7 @@ const SONGS = [
             },
             {
                 name: "RE-ENTRY",
-                genre: 0.4, bpm: 56, repeats: 2, visualMode: 2,
+                genre: 0.4, bpm: 66, repeats: 2, visualMode: 2,
                 guitar: [
                     { f: N.D2, dur: 3 }, { f: N.F2, dur: 1 },
                     { f: N.A2, dur: 2 }, { f: N.G2, dur: 2 },
@@ -1569,7 +1615,7 @@ const SONGS = [
             },
             {
                 name: "LEVIATHAN DIRGE",
-                genre: 0.0, bpm: 38, repeats: 2, visualMode: 0,
+                genre: 0.0, bpm: 50, repeats: 2, visualMode: 0, style: 'fuzz',
                 guitar: [
                     { f: N.D1, dur: 6 },
                     { f: N.Eb1, dur: 2, slide: true },
@@ -1596,7 +1642,7 @@ const SONGS = [
         sections: [
             {
                 name: "STAR BIRTH",
-                genre: 0.85, bpm: 68, repeats: 3, visualMode: 3,
+                genre: 0.85, bpm: 78, repeats: 3, visualMode: 3,
                 guitar: [
                     { f: N.E3, dur: 2 }, { f: N.G3, dur: 1 }, { f: N.A3, dur: 1 },
                     { f: N.B3, dur: 2 }, { f: N.A3, dur: 1 }, { f: N.G3, dur: 1 },
@@ -1614,7 +1660,7 @@ const SONGS = [
             },
             {
                 name: "GRAVITY WELL",
-                genre: 0.5, bpm: 56, repeats: 3, visualMode: 2,
+                genre: 0.5, bpm: 66, repeats: 3, visualMode: 2,
                 guitar: [
                     { f: N.E2, dur: 3 }, { f: N.G2, dur: 1 },
                     { f: N.A2, dur: 2 }, { f: N.E2, dur: 2 },
@@ -1632,7 +1678,7 @@ const SONGS = [
             },
             {
                 name: "BLACK HOLE SUN",
-                genre: 0.0, bpm: 42, repeats: 3, visualMode: 0,
+                genre: 0.0, bpm: 56, repeats: 3, visualMode: 0, style: 'fuzz',
                 guitar: [
                     { f: N.E1, dur: 4, pm: true },
                     { f: N.R, dur: 1 },
@@ -1654,7 +1700,7 @@ const SONGS = [
             },
             {
                 name: "ESCAPE VELOCITY",
-                genre: 0.6, bpm: 64, repeats: 3, visualMode: 2,
+                genre: 0.6, bpm: 74, repeats: 3, visualMode: 2,
                 guitar: [
                     { f: N.A2, dur: 2 }, { f: N.D3, dur: 1 }, { f: N.E3, dur: 1 },
                     { f: N.G3, dur: 2 }, { f: N.E3, dur: 1 }, { f: N.D3, dur: 1 },
@@ -1672,7 +1718,7 @@ const SONGS = [
             },
             {
                 name: "KOSMISCHE MUSIK",
-                genre: 0.95, bpm: 78, repeats: 4, visualMode: 3,
+                genre: 0.95, bpm: 88, repeats: 4, visualMode: 3,
                 guitar: [
                     { f: N.D3, dur: 1 }, { f: N.E3, dur: 1 },
                     { f: N.G3, dur: 1 }, { f: N.A3, dur: 1 },
@@ -1701,7 +1747,7 @@ const SONGS = [
         sections: [
             {
                 name: "THE WEEDIAN",
-                genre: 0.0, bpm: 36, repeats: 4, visualMode: 0,
+                genre: 0.0, bpm: 52, repeats: 4, visualMode: 0,
                 guitar: [
                     { f: N.D1, dur: 4 },
                     { f: N.R, dur: 1 },
@@ -1723,7 +1769,7 @@ const SONGS = [
             },
             {
                 name: "DRAGONAUT",
-                genre: 0.0, bpm: 48, repeats: 4, visualMode: 1,
+                genre: 0.0, bpm: 62, repeats: 4, visualMode: 1,
                 guitar: [
                     { f: N.D1, dur: 2, pm: true },
                     { f: N.R, dur: 1 },
@@ -1749,7 +1795,7 @@ const SONGS = [
             },
             {
                 name: "HOLY MOUNTAIN",
-                genre: 0.0, bpm: 44, repeats: 3, visualMode: 0,
+                genre: 0.0, bpm: 58, repeats: 3, visualMode: 0,
                 guitar: [
                     { f: N.D1, dur: 3 },
                     { f: N.F1, dur: 1 },
@@ -1769,7 +1815,7 @@ const SONGS = [
             },
             {
                 name: "AQUARIAN",
-                genre: 0.1, bpm: 52, repeats: 3, visualMode: 1,
+                genre: 0.1, bpm: 64, repeats: 3, visualMode: 1,
                 guitar: [
                     { f: N.D2, dur: 2 },
                     { f: N.F2, dur: 1 },
@@ -1792,7 +1838,7 @@ const SONGS = [
             },
             {
                 name: "SONIC TITAN",
-                genre: 0.0, bpm: 38, repeats: 3, visualMode: 0,
+                genre: 0.0, bpm: 52, repeats: 3, visualMode: 0,
                 guitar: [
                     { f: N.D1, dur: 8 },
                     { f: N.R, dur: 2 },
@@ -1816,7 +1862,7 @@ const SONGS = [
         sections: [
             {
                 name: "MANTRA OF THE PILGRIM",
-                genre: 0.0, bpm: 50, repeats: 4, visualMode: 0,
+                genre: 0.0, bpm: 62, repeats: 4, visualMode: 0,
                 guitar: [
                     { f: N.D2, dur: 4 },
                     { f: N.R, dur: 4 },
@@ -1835,7 +1881,7 @@ const SONGS = [
             },
             {
                 name: "AT GIZA",
-                genre: 0.05, bpm: 54, repeats: 4, visualMode: 0,
+                genre: 0.05, bpm: 66, repeats: 4, visualMode: 0,
                 guitar: [
                     { f: N.R, dur: 4 },
                     { f: N.D2, dur: 4 },
@@ -1855,7 +1901,7 @@ const SONGS = [
             },
             {
                 name: "STATE OF NON-RETURN",
-                genre: 0.1, bpm: 48, repeats: 3, visualMode: 1,
+                genre: 0.1, bpm: 62, repeats: 3, visualMode: 1,
                 guitar: [
                     { f: N.D2, dur: 4 },
                     { f: N.Eb2, dur: 2 },
@@ -1877,7 +1923,7 @@ const SONGS = [
             },
             {
                 name: "THEBES",
-                genre: 0.3, bpm: 56, repeats: 3, visualMode: 2,
+                genre: 0.3, bpm: 68, repeats: 3, visualMode: 2,
                 guitar: [
                     { f: N.D2, dur: 2 }, { f: N.G2, dur: 1 }, { f: N.A2, dur: 1 },
                     { f: N.Bb2, dur: 2 }, { f: N.A2, dur: 1 }, { f: N.G2, dur: 1 },
@@ -1896,7 +1942,7 @@ const SONGS = [
             },
             {
                 name: "MEDITATION IS THE PRACTICE OF DEATH",
-                genre: 0.0, bpm: 40, repeats: 3, visualMode: 0,
+                genre: 0.0, bpm: 54, repeats: 3, visualMode: 0,
                 guitar: [
                     { f: N.D2, dur: 8 },
                     { f: N.R, dur: 4 },
@@ -1936,6 +1982,19 @@ class SongSequencer {
         this.scheduleInterval = null;
         this.targetGenre = 0.0;
         this.riffFlashVal = 0;
+        this.shuffleMode = false;
+        this.shuffleOrder = [];
+        this.shuffleIndex = 0;
+    }
+
+    _buildShuffleOrder() {
+        this.shuffleOrder = SONGS.map((_, i) => i);
+        // Fisher-Yates shuffle
+        for (let i = this.shuffleOrder.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [this.shuffleOrder[i], this.shuffleOrder[j]] = [this.shuffleOrder[j], this.shuffleOrder[i]];
+        }
+        this.shuffleIndex = 0;
     }
 
     start() {
@@ -1944,13 +2003,56 @@ class SongSequencer {
         this.currentSection = 0;
         this.currentRepeat = 0;
         this.scheduledUntil = audioContext.currentTime + 0.5;
+        if (this.shuffleMode) this._buildShuffleOrder();
         this.applySection();
+        this.updateSongPicker();
         this.scheduleInterval = setInterval(() => this.schedule(), 100);
     }
 
     stop() {
         this.isPlaying = false;
         if (this.scheduleInterval) clearInterval(this.scheduleInterval);
+    }
+
+    playSong(index) {
+        if (index < 0 || index >= SONGS.length) return;
+        this.currentSong = index;
+        this.currentSection = 0;
+        this.currentRepeat = 0;
+        this.scheduledUntil = audioContext.currentTime + 0.3;
+        this.applySection();
+        this.updateSongPicker();
+    }
+
+    nextSong() {
+        if (this.shuffleMode) {
+            this.shuffleIndex = (this.shuffleIndex + 1) % this.shuffleOrder.length;
+            if (this.shuffleIndex === 0) this._buildShuffleOrder();
+            this.playSong(this.shuffleOrder[this.shuffleIndex]);
+        } else {
+            this.playSong((this.currentSong + 1) % SONGS.length);
+        }
+    }
+
+    prevSong() {
+        if (this.shuffleMode) {
+            this.shuffleIndex = (this.shuffleIndex - 1 + this.shuffleOrder.length) % this.shuffleOrder.length;
+            this.playSong(this.shuffleOrder[this.shuffleIndex]);
+        } else {
+            this.playSong((this.currentSong - 1 + SONGS.length) % SONGS.length);
+        }
+    }
+
+    toggleShuffle() {
+        this.shuffleMode = !this.shuffleMode;
+        if (this.shuffleMode) this._buildShuffleOrder();
+        const btn = document.getElementById('btn-shuffle');
+        if (btn) btn.classList.toggle('shuffle-active', this.shuffleMode);
+    }
+
+    updateSongPicker() {
+        const btns = document.querySelectorAll('#song-list .song-btn');
+        btns.forEach((btn, i) => btn.classList.toggle('active', i === this.currentSong));
     }
 
     applySection() {
@@ -1960,9 +2062,19 @@ class SongSequencer {
 
         // Apply instrument tones based on song style
         const g = section.genre;
-        if (song.style === 'sleep') {
-            this.guitar.setSleepTone();
-            this.bass.setSleepTone();
+        if (section.style === 'fuzz' || song.style === 'fuzz') {
+            this.guitar.setFuzzTone();
+            this.bass.setFuzzTone();
+            this.drums.setDoomRoom();
+        } else if (song.style === 'sleep') {
+            // Alternate between sleep wall-of-fuzz and octave fuzz for variety
+            if (this.currentSection % 2 === 1) {
+                this.guitar.setFuzzTone();
+                this.bass.setFuzzTone();
+            } else {
+                this.guitar.setSleepTone();
+                this.bass.setSleepTone();
+            }
             this.drums.setDoomRoom();
         } else if (song.style === 'om') {
             this.guitar.setOmCleanTone();
@@ -1994,12 +2106,13 @@ class SongSequencer {
         // Visual mode
         currentMode = section.visualMode;
 
-        this.showSection(song.name, section.name, g);
+        this.showSection(song.name, section.name, g, section.style || song.style);
     }
 
-    showSection(songName, sectionName, genre) {
+    showSection(songName, sectionName, genre, style) {
         let icon, label;
-        if (songName === 'DOPESMOKER') { icon = '\uD83C\uDF3F'; label = 'SLEEP'; }
+        if (style === 'fuzz') { icon = '\u26A1'; label = 'FUZZ DOOM'; }
+        else if (songName === 'DOPESMOKER') { icon = '\uD83C\uDF3F'; label = 'SLEEP'; }
         else if (songName === 'ADVAITIC SONGS') { icon = '\uD83D\uDD49\uFE0F'; label = 'OM'; }
         else if (genre < 0.2) { icon = '\uD83E\uDDA3'; label = 'STONER DOOM'; }
         else if (genre < 0.5) { icon = '\uD83E\uDDA3'; label = 'DOOM RISING'; }
@@ -2092,7 +2205,14 @@ class SongSequencer {
             this.currentSection++;
             if (this.currentSection >= song.sections.length) {
                 this.currentSection = 0;
-                this.currentSong = (this.currentSong + 1) % SONGS.length;
+                if (this.shuffleMode) {
+                    this.shuffleIndex = (this.shuffleIndex + 1) % this.shuffleOrder.length;
+                    if (this.shuffleIndex === 0) this._buildShuffleOrder();
+                    this.currentSong = this.shuffleOrder[this.shuffleIndex];
+                } else {
+                    this.currentSong = (this.currentSong + 1) % SONGS.length;
+                }
+                this.updateSongPicker();
             }
 
             // Schedule crash on section transitions
@@ -2150,15 +2270,15 @@ window.addEventListener('keydown', (e) => {
         if (!isDoom) {
             isDoom = true;
             mainBus = audioContext.createGain();
-            mainBus.gain.value = 0.7;
+            mainBus.gain.value = 0.55;
 
             // Master compressor/limiter
             const masterComp = audioContext.createDynamicsCompressor();
-            masterComp.threshold.value = -12;
-            masterComp.knee.value = 6;
-            masterComp.ratio.value = 8;
-            masterComp.attack.value = 0.003;
-            masterComp.release.value = 0.25;
+            masterComp.threshold.value = -6;
+            masterComp.knee.value = 3;
+            masterComp.ratio.value = 14;
+            masterComp.attack.value = 0.002;
+            masterComp.release.value = 0.15;
 
             mainBus.connect(masterComp);
             masterComp.connect(audioContext.destination);
@@ -2172,7 +2292,32 @@ window.addEventListener('keydown', (e) => {
             sequencer = new SongSequencer(guitar, bass, drums, spaceSynth);
             sequencer.start();
 
+            // Build song picker buttons
+            const songList = document.getElementById('song-list');
+            if (songList && songList.children.length === 0) {
+                SONGS.forEach((song, i) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'song-btn' + (i === 0 ? ' active' : '');
+                    btn.textContent = song.name;
+                    btn.addEventListener('click', () => {
+                        if (sequencer && sequencer.isPlaying) sequencer.playSong(i);
+                    });
+                    songList.appendChild(btn);
+                });
+            }
+            // Wire control buttons
+            document.getElementById('btn-prev').addEventListener('click', () => {
+                if (sequencer && sequencer.isPlaying) sequencer.prevSong();
+            });
+            document.getElementById('btn-next').addEventListener('click', () => {
+                if (sequencer && sequencer.isPlaying) sequencer.nextSong();
+            });
+            document.getElementById('btn-shuffle').addEventListener('click', () => {
+                if (sequencer) sequencer.toggleShuffle();
+            });
+
             document.getElementById('doom-overlay').classList.add('active');
+            document.getElementById('song-picker').classList.add('active');
             document.getElementById('doom-status').textContent = 'MONOLITH RISING';
             const gi = document.getElementById('genre-indicator');
             if (gi) { gi.textContent = '\uD83E\uDDA3 STONER DOOM'; gi.className = 'doom-mode'; }
@@ -2183,6 +2328,7 @@ window.addEventListener('keydown', (e) => {
             if (bass) bass.fadeOut();
             if (spaceSynth) spaceSynth.fadeOut();
             document.getElementById('doom-overlay').classList.remove('active');
+            document.getElementById('song-picker').classList.remove('active');
             document.getElementById('doom-status').textContent = 'PRESS D FOR DOOM';
             const gi = document.getElementById('genre-indicator');
             if (gi) gi.textContent = '';
@@ -2195,6 +2341,9 @@ window.addEventListener('keydown', (e) => {
     }
     if (key >= '1' && key <= '4') currentMode = parseInt(key) - 1;
     if (key === 'm') initMic();
+    if (key === 'n' && isDoom && sequencer) sequencer.nextSong();
+    if (key === 'p' && isDoom && sequencer) sequencer.prevSong();
+    if (key === 's' && isDoom && sequencer) sequencer.toggleShuffle();
 });
 
 // ===== DISPLAY SHADER =====
