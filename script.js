@@ -682,10 +682,28 @@ class RealisticGuitar {
         this.masterGain = ctx.createGain();
         this.masterGain.gain.value = 0.16;
 
+        // Wah-wah filter (peaking, inline — transparent when off)
+        this.wahFilter = ctx.createBiquadFilter();
+        this.wahFilter.type = 'peaking';
+        this.wahFilter.frequency.value = 600;
+        this.wahFilter.Q.value = 0.5;
+        this.wahFilter.gain.value = 0;
+
+        this.wahLFO = ctx.createOscillator();
+        this.wahLFO.type = 'triangle';
+        this.wahLFO.frequency.value = 2.0;
+        this.wahLFO.start();
+
+        this.wahLFOGain = ctx.createGain();
+        this.wahLFOGain.gain.value = 0;
+        this.wahLFO.connect(this.wahLFOGain);
+        this.wahLFOGain.connect(this.wahFilter.frequency);
+
         // Wire the chain
         this.inputGain.connect(this.preampDrive);
         this.preampDrive.connect(this.preampDrive2);
-        this.preampDrive2.connect(this.tsBass);
+        this.preampDrive2.connect(this.wahFilter);
+        this.wahFilter.connect(this.tsBass);
         this.tsBass.connect(this.tsMid);
         this.tsMid.connect(this.tsTreble);
         this.tsTreble.connect(this.presence);
@@ -723,8 +741,19 @@ class RealisticGuitar {
         const n = 44100, curve = new Float32Array(n);
         for (let i = 0; i < n; i++) {
             const x = (i * 2) / n - 1;
-            if (x >= 0) curve[i] = 1.0 - Math.exp(-x * drive);
-            else curve[i] = -(1.0 - Math.exp(x * drive * 1.2)) * 0.95;
+            // Asymmetric tube clipping: positive soft (triode plate limiting),
+            // negative harder (grid current cutoff) — generates warm even harmonics
+            const bias = 0.04;
+            const xb = x + bias;
+            let y;
+            if (xb >= 0) {
+                y = Math.tanh(xb * drive * 0.8) * 0.95;
+                y += Math.sin(xb * Math.PI * drive * 0.3) * 0.04;
+            } else {
+                y = -Math.tanh(-xb * drive * 1.4) * 0.98;
+                y *= 1.0 - Math.exp(xb * drive * 2.0) * 0.06;
+            }
+            curve[i] = Math.max(-1.0, Math.min(1.0, y));
         }
         return curve;
     }
@@ -812,6 +841,23 @@ class RealisticGuitar {
             noteGain.connect(this.inputGain);
         }
 
+        // Vibrato with delayed onset (natural playing style)
+        if (!palmMute && duration > 0.3) {
+            const vibLFO = this.ctx.createOscillator();
+            vibLFO.type = 'sine';
+            vibLFO.frequency.value = 4.5 + Math.random() * 1.5;
+            const vibGain = this.ctx.createGain();
+            const vibDelay = Math.min(duration * 0.35, 0.3);
+            const vibPeak = Math.min(duration * 0.7, 0.8);
+            vibGain.gain.setValueAtTime(0, startTime);
+            vibGain.gain.linearRampToValueAtTime(0, startTime + vibDelay);
+            vibGain.gain.linearRampToValueAtTime(freq * 0.006, startTime + vibPeak);
+            vibLFO.connect(vibGain);
+            oscs.forEach(({ osc }) => vibGain.connect(osc.frequency));
+            vibLFO.start(startTime);
+            vibLFO.stop(startTime + duration + 0.05);
+        }
+
         const stopTime = startTime + duration + 0.05;
         oscs.forEach(({ osc }) => {
             if (slide && this.currentFreq > 0) {
@@ -830,6 +876,18 @@ class RealisticGuitar {
             oscs.forEach(({ osc }) => { try { osc.disconnect(); } catch(e){} });
             try { noteGain.disconnect(); pickSrc.disconnect(); } catch(e){}
         }, (stopTime - this.ctx.currentTime) * 1000 + 300);
+    }
+
+    killAllNotes() {
+        const old = this.inputGain;
+        this.inputGain = this.ctx.createGain();
+        this.inputGain.gain.value = 0.6;
+        this.inputGain.connect(this.preampDrive);
+        try {
+            old.gain.setValueAtTime(old.gain.value, this.ctx.currentTime);
+            old.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.015);
+        } catch(e) {}
+        setTimeout(() => { try { old.disconnect(); } catch(e) {} }, 100);
     }
 
     setDoomTone() {
@@ -924,6 +982,36 @@ class RealisticGuitar {
         this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
         this.masterGain.gain.linearRampToValueAtTime(0.16, this.ctx.currentTime + 0.5);
     }
+
+    enableWah(rate = 2.0) {
+        this.wahFilter.Q.value = 8;
+        this.wahFilter.gain.value = 15;
+        this.wahFilter.frequency.value = 600;
+        this.wahLFO.frequency.value = rate;
+        this.wahLFOGain.gain.value = 500;
+    }
+
+    disableWah() {
+        this.wahFilter.Q.value = 0.5;
+        this.wahFilter.gain.value = 0;
+        this.wahLFOGain.gain.value = 0;
+    }
+
+    set70sTone() {
+        // Warm crunchy 70s tone — less gain than modern doom, pushed mids
+        this.tsBass.gain.value = 3;
+        this.tsMid.gain.value = 2;
+        this.tsTreble.gain.value = -4;
+        this.cabLP.frequency.value = 5000;
+        this.preampDrive.curve = this._tubeSaturation(4.0);
+        this.preampDrive2.curve = this._tubeSaturation(2.5);
+        this.delay.delayTime.value = 0.40;
+        this.delayFB.gain.value = 0.15;
+        this.delayWet.gain.value = 0.05;
+        this.reverbWet.gain.value = 0.12;
+        this.masterGain.gain.value = 0.18;
+        this.disableWah();
+    }
 }
 
 
@@ -965,6 +1053,10 @@ class BassGuitar {
 
         this.masterGain = ctx.createGain();
         this.masterGain.gain.value = 0.22;
+
+        this._noteInput = ctx.createGain();
+        this._noteInput.gain.value = 1.0;
+        this._noteInput.connect(this.drive);
 
         this.drive.connect(this.bassBoost);
         this.bassBoost.connect(this.midCut);
@@ -1017,7 +1109,7 @@ class BassGuitar {
         noiseF.type = 'bandpass'; noiseF.frequency.value = freq * 2; noiseF.Q.value = 3;
         noiseSrc.connect(noiseF); noiseF.connect(noiseG); noiseG.connect(noteGain);
 
-        noteGain.connect(this.drive);
+        noteGain.connect(this._noteInput);
 
         const stopTime = startTime + duration + 0.05;
         [fund, grit, sub].forEach(o => { o.start(startTime); o.stop(stopTime); });
@@ -1027,6 +1119,18 @@ class BassGuitar {
             [fund, grit, sub].forEach(o => { try { o.disconnect(); } catch(e){} });
             try { noteGain.disconnect(); noiseSrc.disconnect(); } catch(e){}
         }, (stopTime - this.ctx.currentTime) * 1000 + 300);
+    }
+
+    killAllNotes() {
+        const old = this._noteInput;
+        this._noteInput = this.ctx.createGain();
+        this._noteInput.gain.value = 1.0;
+        this._noteInput.connect(this.drive);
+        try {
+            old.gain.setValueAtTime(old.gain.value, this.ctx.currentTime);
+            old.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.015);
+        } catch(e) {}
+        setTimeout(() => { try { old.disconnect(); } catch(e) {} }, 100);
     }
 
     fadeOut() { this.masterGain.gain.linearRampToValueAtTime(0.0001, this.ctx.currentTime + 0.5); }
@@ -1080,6 +1184,17 @@ class BassGuitar {
         this.midCut.gain.value = -3;
         this.cabLP.frequency.value = 2800;
         this.masterGain.gain.value = 0.26;
+    }
+
+    set70sTone() {
+        // 70s bass — warm and round, not as fuzzed as doom
+        const n = 44100, curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve[i] = Math.tanh(x * 2.0); }
+        this.drive.curve = curve;
+        this.bassBoost.gain.value = 5;
+        this.midCut.gain.value = -2;
+        this.cabLP.frequency.value = 3500;
+        this.masterGain.gain.value = 0.24;
     }
 }
 
@@ -1247,6 +1362,18 @@ class SpaceSynth {
         }, (startTime + duration - this.ctx.currentTime) * 1000 + 300);
     }
 
+    killAllNotes() {
+        const old = this.padInput;
+        this.padInput = this.ctx.createGain();
+        this.padInput.gain.value = 1.0;
+        this.padInput.connect(this.phaserStages[0]);
+        try {
+            old.gain.setValueAtTime(old.gain.value, this.ctx.currentTime);
+            old.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.015);
+        } catch(e) {}
+        setTimeout(() => { try { old.disconnect(); } catch(e) {} }, 100);
+    }
+
     fadeIn(time = 2.0) {
         this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
         this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
@@ -1262,12 +1389,236 @@ class SpaceSynth {
 
 
 // =====================================================
+// ===== HAMMOND ORGAN (70s Tonewheel + Leslie) =======
+// =====================================================
+
+class HammondOrgan {
+    constructor(ctx, dest) {
+        this.ctx = ctx;
+
+        // Leslie speaker tremolo (amplitude modulation from rotating horn)
+        this.tremoloLFO = ctx.createOscillator();
+        this.tremoloLFO.type = 'sine';
+        this.tremoloLFO.frequency.value = 0.8;
+        this.tremoloLFO.start();
+        this.tremoloGain = ctx.createGain();
+        this.tremoloGain.gain.value = 0.15;
+        this.tremoloLFO.connect(this.tremoloGain);
+
+        // Leslie vibrato (pitch modulation from rotating horn)
+        this.vibratoLFO = ctx.createOscillator();
+        this.vibratoLFO.type = 'sine';
+        this.vibratoLFO.frequency.value = 0.8;
+        this.vibratoLFO.start();
+
+        // Leslie Doppler delay
+        this.leslieDelay = ctx.createDelay(0.02);
+        this.leslieDelay.delayTime.value = 0.003;
+        this.leslieDelayLFO = ctx.createOscillator();
+        this.leslieDelayLFO.type = 'sine';
+        this.leslieDelayLFO.frequency.value = 0.8;
+        this.leslieDelayLFO.start();
+        this.leslieDelayDepth = ctx.createGain();
+        this.leslieDelayDepth.gain.value = 0.002;
+        this.leslieDelayLFO.connect(this.leslieDelayDepth);
+        this.leslieDelayDepth.connect(this.leslieDelay.delayTime);
+
+        // Overdrive (cranked preamp for dirty organ)
+        this.overdrive = ctx.createWaveShaper();
+        const n = 44100, curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+            const x = (i * 2) / n - 1;
+            curve[i] = Math.tanh(x * 1.5);
+        }
+        this.overdrive.curve = curve;
+        this.overdrive.oversample = '2x';
+
+        // Tone shaping
+        this.bassEQ = ctx.createBiquadFilter();
+        this.bassEQ.type = 'lowshelf';
+        this.bassEQ.frequency.value = 200;
+        this.bassEQ.gain.value = 2;
+
+        this.trebleEQ = ctx.createBiquadFilter();
+        this.trebleEQ.type = 'highshelf';
+        this.trebleEQ.frequency.value = 3000;
+        this.trebleEQ.gain.value = -3;
+
+        this.masterGain = ctx.createGain();
+        this.masterGain.gain.value = 0.0;
+
+        // Signal chain: input → overdrive → EQ → leslie delay → masterGain
+        this.inputGain = ctx.createGain();
+        this.inputGain.gain.value = 0.7;
+
+        this.inputGain.connect(this.overdrive);
+        this.overdrive.connect(this.bassEQ);
+        this.bassEQ.connect(this.trebleEQ);
+        this.trebleEQ.connect(this.leslieDelay);
+        this.leslieDelay.connect(this.masterGain);
+
+        // Tremolo modulates master volume
+        this.tremoloGain.connect(this.masterGain.gain);
+
+        this.masterGain.connect(dest);
+    }
+
+    // Hammond drawbar harmonic ratios:
+    // 16'   5-1/3'  8'    4'    2-2/3'  2'    1-3/5'  1-1/3'  1'
+    // 0.5   1.5     1.0   2.0   3.0     4.0   5.0     6.0     8.0
+    _drawbarRatios() {
+        return [0.5, 1.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0];
+    }
+
+    _getDrawbars(preset) {
+        const presets = {
+            default: [8, 8, 8, 0, 0, 0, 0, 0, 0],   // Gospel: warm fundamental
+            full:    [8, 8, 8, 8, 8, 8, 8, 8, 8],   // All drawbars full: massive
+            jazz:    [8, 3, 8, 0, 0, 0, 0, 0, 0],   // Jazz/soul: hollow
+            rock:    [8, 8, 8, 6, 4, 6, 0, 0, 0],   // Rock organ: biting
+            doom:    [8, 8, 8, 8, 0, 4, 0, 8, 0],   // Doom: deep + shrill
+        };
+        return presets[preset] || presets.default;
+    }
+
+    playChord(freqs, startTime, duration, drawbarPreset = 'default') {
+        if (!freqs || freqs.length === 0) return;
+        const bars = this._getDrawbars(drawbarPreset);
+        const ratios = this._drawbarRatios();
+
+        freqs.forEach(freq => {
+            const noteGain = this.ctx.createGain();
+            const attack = 0.02;
+            const release = 0.08;
+            noteGain.gain.setValueAtTime(0.0001, startTime);
+            noteGain.gain.linearRampToValueAtTime(0.08, startTime + attack);
+            noteGain.gain.setValueAtTime(0.07, startTime + Math.max(attack, duration - release));
+            noteGain.gain.linearRampToValueAtTime(0.0001, startTime + duration);
+
+            // Key click (percussion transient)
+            const clickDur = 0.012;
+            const clickBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * clickDur), this.ctx.sampleRate);
+            const cd = clickBuf.getChannelData(0);
+            for (let i = 0; i < cd.length; i++) {
+                cd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (cd.length * 0.06));
+            }
+            const clickSrc = this.ctx.createBufferSource();
+            clickSrc.buffer = clickBuf;
+            const clickGain = this.ctx.createGain();
+            clickGain.gain.value = 0.06;
+            const clickFilter = this.ctx.createBiquadFilter();
+            clickFilter.type = 'bandpass';
+            clickFilter.frequency.value = freq * 4;
+            clickFilter.Q.value = 3;
+            clickSrc.connect(clickFilter);
+            clickFilter.connect(clickGain);
+            clickGain.connect(noteGain);
+            clickSrc.start(startTime);
+
+            // Tonewheel harmonics based on drawbar settings
+            const voices = [];
+            ratios.forEach((ratio, idx) => {
+                const level = bars[idx] / 8.0;
+                if (level < 0.01) return;
+
+                const osc = this.ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = freq * ratio;
+
+                // Leslie pitch wobble
+                const vibG = this.ctx.createGain();
+                vibG.gain.value = freq * ratio * 0.003;
+                this.vibratoLFO.connect(vibG);
+                vibG.connect(osc.frequency);
+
+                const oscGain = this.ctx.createGain();
+                oscGain.gain.value = level * 0.04;
+
+                osc.connect(oscGain);
+                oscGain.connect(noteGain);
+                osc.start(startTime);
+                osc.stop(startTime + duration + 0.1);
+                voices.push({ osc, vibG });
+            });
+
+            noteGain.connect(this.inputGain);
+
+            setTimeout(() => {
+                voices.forEach(({ osc, vibG }) => {
+                    try { osc.disconnect(); vibG.disconnect(); } catch(e){}
+                });
+                try { noteGain.disconnect(); clickSrc.disconnect(); } catch(e){}
+            }, (startTime + duration - this.ctx.currentTime) * 1000 + 500);
+        });
+    }
+
+    killAllNotes() {
+        const old = this.inputGain;
+        this.inputGain = this.ctx.createGain();
+        this.inputGain.gain.value = 0.7;
+        this.inputGain.connect(this.overdrive);
+        try {
+            old.gain.setValueAtTime(old.gain.value, this.ctx.currentTime);
+            old.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.015);
+        } catch(e) {}
+        setTimeout(() => { try { old.disconnect(); } catch(e) {} }, 100);
+    }
+
+    setLeslieSpeed(speed) {
+        const now = this.ctx.currentTime;
+        let freq;
+        if (speed === 'fast') freq = 6.8;
+        else if (speed === 'slow') freq = 0.8;
+        else freq = 0.0;
+
+        // Leslie ramp-up/down characteristic (mechanical inertia)
+        const rampTime = speed === 'fast' ? 1.5 : 2.5;
+        [this.tremoloLFO, this.vibratoLFO, this.leslieDelayLFO].forEach(lfo => {
+            lfo.frequency.setValueAtTime(lfo.frequency.value, now);
+            lfo.frequency.linearRampToValueAtTime(freq, now + rampTime);
+        });
+    }
+
+    setDirtyTone() {
+        const n = 44100, curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+            const x = (i * 2) / n - 1;
+            curve[i] = Math.tanh(x * 4.0);
+        }
+        this.overdrive.curve = curve;
+    }
+
+    setCleanTone() {
+        const n = 44100, curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+            const x = (i * 2) / n - 1;
+            curve[i] = Math.tanh(x * 1.2);
+        }
+        this.overdrive.curve = curve;
+    }
+
+    fadeIn(time = 1.5) {
+        this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+        this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
+        this.masterGain.gain.linearRampToValueAtTime(0.20, this.ctx.currentTime + time);
+    }
+
+    fadeOut(time = 1.5) {
+        this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+        this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
+        this.masterGain.gain.linearRampToValueAtTime(0.0001, this.ctx.currentTime + time);
+    }
+}
+
+
+// =====================================================
 // ===== DOOM DRUMS ===================================
 // =====================================================
 
 class DoomDrums {
     constructor(ctx, dest) {
         this.ctx = ctx;
+        this._dest = dest;
 
         this.roomVerb = ctx.createConvolver();
         const roomLen = ctx.sampleRate * 1.2;
@@ -1549,6 +1900,19 @@ class DoomDrums {
     setDoomRoom() {
         this.roomWet.gain.value = 0.10;
         this.dryGain.gain.value = 0.32;
+    }
+
+    killAllNotes() {
+        const old = this.dryGain;
+        this.dryGain = this.ctx.createGain();
+        this.dryGain.gain.value = 0.32;
+        this.dryGain.connect(this._dest);
+        this.dryGain.connect(this.roomVerb);
+        try {
+            old.gain.setValueAtTime(old.gain.value, this.ctx.currentTime);
+            old.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.015);
+        } catch(e) {}
+        setTimeout(() => { try { old.disconnect(); } catch(e) {} }, 100);
     }
 }
 
@@ -2187,6 +2551,145 @@ const SONGS = [
             },
         ]
     },
+    {
+        name: "IRON WORSHIP",
+        style: "70s",
+        sections: [
+            {
+                name: "RITE OF THE RIFF",
+                genre: 0.0, bpm: 54, repeats: 3, visualMode: 0,
+                guitar: [
+                    { f: N.E1, dur: 4 },
+                    { f: N.R, dur: 1 },
+                    { f: N.E1, dur: 2, pm: true },
+                    { f: N.Bb1, dur: 1, slide: true },
+                    { f: N.A1, dur: 2 },
+                    { f: N.G1, dur: 1 },
+                    { f: N.E1, dur: 1 },
+                    { f: N.E1, dur: 3, pm: true },
+                    { f: N.R, dur: 1 },
+                ],
+                bass: [
+                    { f: N.E1, dur: 4 }, { f: N.R, dur: 1 },
+                    { f: N.E1, dur: 2 }, { f: N.Bb1, dur: 1 },
+                    { f: N.A1, dur: 2 }, { f: N.G1, dur: 1 }, { f: N.E1, dur: 1 },
+                    { f: N.E1, dur: 3 }, { f: N.R, dur: 1 },
+                ],
+                drums: "K---h---S---h---|K---h---S---ThTL",
+                padChord: null, arp: null, organ: null,
+            },
+            {
+                name: "HAMMER OF THE RIFF",
+                genre: 0.0, bpm: 68, repeats: 4, visualMode: 1,
+                guitar: [
+                    { f: N.E1, dur: 2 },
+                    { f: N.G1, dur: 1 },
+                    { f: N.A1, dur: 1 },
+                    { f: N.Bb1, dur: 3 },
+                    { f: N.A1, dur: 1 },
+                    { f: N.G1, dur: 2 },
+                    { f: N.E1, dur: 2 },
+                    { f: N.F1, dur: 2 },
+                    { f: N.E1, dur: 2 },
+                ],
+                bass: [
+                    { f: N.E1, dur: 2 }, { f: N.G1, dur: 1 }, { f: N.A1, dur: 1 },
+                    { f: N.Bb1, dur: 3 }, { f: N.A1, dur: 1 },
+                    { f: N.G1, dur: 2 }, { f: N.E1, dur: 2 },
+                    { f: N.F1, dur: 2 }, { f: N.E1, dur: 2 },
+                ],
+                drums: "K-KhS--hK-KhS--h|K-KhS--hK-KhSOhH",
+                padChord: null, arp: null,
+                organ: { chord: [N.E3, N.G3, N.Bb3], drawbars: 'full' },
+            },
+            {
+                name: "WICKED PHASE",
+                genre: 0.15, bpm: 72, repeats: 3, visualMode: 1, wahGuitar: true,
+                guitar: [
+                    { f: N.E2, dur: 1 }, { f: N.G2, dur: 1 },
+                    { f: N.A2, dur: 2 },
+                    { f: N.E2, dur: 1 }, { f: N.Bb2, dur: 1 },
+                    { f: N.A2, dur: 1 }, { f: N.G2, dur: 1 },
+                    { f: N.E2, dur: 2 },
+                    { f: N.D2, dur: 1 }, { f: N.E2, dur: 1 },
+                    { f: N.G2, dur: 2 },
+                    { f: N.A2, dur: 1 }, { f: N.E2, dur: 1 },
+                ],
+                bass: [
+                    { f: N.E1, dur: 4 }, { f: N.A1, dur: 4 },
+                    { f: N.E1, dur: 2 }, { f: N.D1, dur: 2 },
+                    { f: N.G1, dur: 2 }, { f: N.E1, dur: 2 },
+                ],
+                drums: "K-H-S-H-KhH-S-Hh|K-H-S-H-KhH-SOH-",
+                padChord: null, arp: null,
+                organ: { chord: [N.E3, N.A3, N.B3], drawbars: 'jazz' },
+            },
+            {
+                name: "CATHEDRAL OF SOUND",
+                genre: 0.45, bpm: 76, repeats: 3, visualMode: 2,
+                guitar: [
+                    { f: N.E2, dur: 3 }, { f: N.G2, dur: 1 },
+                    { f: N.A2, dur: 2 }, { f: N.B2, dur: 2 },
+                    { f: N.D3, dur: 3 }, { f: N.B2, dur: 1 },
+                    { f: N.A2, dur: 2 }, { f: N.G2, dur: 1 }, { f: N.E2, dur: 1 },
+                ],
+                bass: [
+                    { f: N.E1, dur: 4 }, { f: N.A1, dur: 4 },
+                    { f: N.D2, dur: 4 }, { f: N.A1, dur: 2 }, { f: N.E1, dur: 2 },
+                ],
+                drums: "K-R-S-R-KhR-S-Rr|K-R-S-R-KhR-SORB",
+                padChord: [N.E3, N.G3, N.B3],
+                arp: null,
+                organ: { chord: [N.E3, N.G3, N.B3, N.D4], drawbars: 'full', leslie: 'fast' },
+            },
+            {
+                name: "DESCENT INTO FUZZ",
+                genre: 0.0, bpm: 60, repeats: 4, visualMode: 0, style: 'fuzz',
+                guitar: [
+                    { f: N.E1, dur: 3 },
+                    { f: N.R, dur: 1 },
+                    { f: N.E1, dur: 2, pm: true },
+                    { f: N.F1, dur: 1, slide: true },
+                    { f: N.E1, dur: 1 },
+                    { f: N.G1, dur: 2 },
+                    { f: N.Bb1, dur: 2 },
+                    { f: N.A1, dur: 2 },
+                    { f: N.E1, dur: 2 },
+                ],
+                bass: [
+                    { f: N.E1, dur: 4 }, { f: N.R, dur: 1 },
+                    { f: N.E1, dur: 2 }, { f: N.F1, dur: 1 },
+                    { f: N.G1, dur: 2 }, { f: N.Bb1, dur: 2 },
+                    { f: N.A1, dur: 2 }, { f: N.E1, dur: 2 },
+                ],
+                drums: "K--hS--hK-KhS--h|K--hS--hK-KhSOhH",
+                padChord: null, arp: null,
+                organ: { chord: [N.E3, N.Bb3, N.D4], drawbars: 'doom', leslie: 'fast' },
+            },
+            {
+                name: "THE FINAL WORSHIP",
+                genre: 0.0, bpm: 50, repeats: 2, visualMode: 0,
+                guitar: [
+                    { f: N.E1, dur: 8 },
+                    { f: N.R, dur: 2 },
+                    { f: N.Bb1, dur: 3 },
+                    { f: N.A1, dur: 1 },
+                    { f: N.G1, dur: 2 },
+                    { f: N.E1, dur: 8 },
+                    { f: N.R, dur: 4 },
+                ],
+                bass: [
+                    { f: N.E1, dur: 8 },
+                    { f: N.Bb1, dur: 4 },
+                    { f: N.A1, dur: 2 }, { f: N.G1, dur: 2 },
+                    { f: N.E1, dur: 8 }, { f: N.R, dur: 4 },
+                ],
+                drums: "K---h---S---h---|K---h---S---ThTL",
+                padChord: null, arp: null,
+                organ: { chord: [N.E2, N.B2, N.E3], drawbars: 'default', leslie: 'slow' },
+            },
+        ]
+    },
 ];
 
 
@@ -2195,11 +2698,12 @@ const SONGS = [
 // =====================================================
 
 class SongSequencer {
-    constructor(guitar, bass, drums, spaceSynth) {
+    constructor(guitar, bass, drums, spaceSynth, organ) {
         this.guitar = guitar;
         this.bass = bass;
         this.drums = drums;
         this.spaceSynth = spaceSynth;
+        this.organ = organ;
         this.currentSong = 0;
         this.currentSection = 0;
         this.currentRepeat = 0;
@@ -2249,6 +2753,14 @@ class SongSequencer {
         this._generation++;
         this._pendingTransitionTimeouts.forEach(id => clearTimeout(id));
         this._pendingTransitionTimeouts = [];
+
+        // Kill all currently playing/scheduled notes to prevent song overlap
+        this.guitar.killAllNotes();
+        this.bass.killAllNotes();
+        this.spaceSynth.killAllNotes();
+        if (this.organ) this.organ.killAllNotes();
+        this.drums.killAllNotes();
+
         this.currentSong = index;
         this.currentSection = 0;
         this.currentRepeat = 0;
@@ -2299,6 +2811,10 @@ class SongSequencer {
             this.guitar.setFuzzTone();
             this.bass.setFuzzTone();
             this.drums.setDoomRoom();
+        } else if (song.style === '70s') {
+            this.guitar.set70sTone();
+            this.bass.set70sTone();
+            this.drums.setDoomRoom();
         } else if (song.style === 'sleep') {
             // Alternate between sleep wall-of-fuzz and octave fuzz for variety
             if (this.currentSection % 2 === 1) {
@@ -2336,6 +2852,27 @@ class SongSequencer {
             this.spaceSynth.fadeOut(3.0);
         }
 
+        // Hammond organ control
+        if (this.organ) {
+            if (section.organ) {
+                this.organ.fadeIn(2.0);
+                if (section.organ.leslie === 'fast') this.organ.setLeslieSpeed('fast');
+                else if (section.organ.leslie === 'slow') this.organ.setLeslieSpeed('slow');
+                else this.organ.setLeslieSpeed('slow');
+                if (section.style === 'fuzz' || song.style === 'fuzz') this.organ.setDirtyTone();
+                else this.organ.setCleanTone();
+            } else {
+                this.organ.fadeOut(2.0);
+            }
+        }
+
+        // Wah-wah guitar control
+        if (section.wahGuitar) {
+            this.guitar.enableWah(section.wahRate || 2.0);
+        } else {
+            this.guitar.disableWah();
+        }
+
         // Visual mode
         currentMode = section.visualMode;
 
@@ -2345,6 +2882,7 @@ class SongSequencer {
     showSection(songName, sectionName, genre, style) {
         let icon, label;
         if (style === 'fuzz') { icon = '\u26A1'; label = 'FUZZ DOOM'; }
+        else if (style === '70s' || songName === 'IRON WORSHIP') { icon = '\u2720'; label = '70s DOOM'; }
         else if (songName === 'DOPESMOKER') { icon = '\uD83C\uDF3F'; label = 'SLEEP'; }
         else if (songName === 'ADVAITIC SONGS') { icon = '\uD83D\uDD49\uFE0F'; label = 'OM'; }
         else if (genre < 0.2) { icon = '\uD83E\uDDA3'; label = 'STONER DOOM'; }
@@ -2462,6 +3000,16 @@ class SongSequencer {
             }
         }
 
+        // Schedule organ chords
+        if (this.organ && section.organ && section.organ.chord) {
+            this.organ.playChord(
+                section.organ.chord,
+                t,
+                patternDur,
+                section.organ.drawbars || 'default'
+            );
+        }
+
         // Riff flash for visuals
         const flashDelay = Math.max(0, (t - now) * 1000);
         setTimeout(() => { this.riffFlashVal = 1.0; }, flashDelay);
@@ -2505,7 +3053,7 @@ class SongSequencer {
 
 
 // ===== INSTANCES =====
-let guitar, bass, drums, spaceSynth, sequencer, mainBus;
+let guitar, bass, drums, spaceSynth, organ, sequencer, mainBus;
 let isDoom = false;
 
 // ===== UI =====
@@ -2566,8 +3114,9 @@ window.addEventListener('keydown', (e) => {
             bass = new BassGuitar(audioContext, mainBus);
             drums = new DoomDrums(audioContext, mainBus);
             spaceSynth = new SpaceSynth(audioContext, mainBus);
+            organ = new HammondOrgan(audioContext, mainBus);
 
-            sequencer = new SongSequencer(guitar, bass, drums, spaceSynth);
+            sequencer = new SongSequencer(guitar, bass, drums, spaceSynth, organ);
             sequencer.start();
 
             // Build song picker buttons
@@ -2606,6 +3155,7 @@ window.addEventListener('keydown', (e) => {
             if (guitar) guitar.fadeOut();
             if (bass) bass.fadeOut();
             if (spaceSynth) spaceSynth.fadeOut();
+            if (organ) organ.fadeOut();
             document.getElementById('doom-overlay').classList.remove('active');
             document.getElementById('song-picker').classList.remove('active');
             document.getElementById('doom-status').textContent = 'PRESS D FOR DOOM';
