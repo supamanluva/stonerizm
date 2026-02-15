@@ -1294,10 +1294,10 @@ class DoomDrums {
         this.snareVal = 0;
     }
 
-    kick(time) {
+    kick(time, vel = 1.0) {
         const body = this.ctx.createOscillator();
         body.type = 'sine';
-        body.frequency.setValueAtTime(110, time);
+        body.frequency.setValueAtTime(110 + (Math.random() - 0.5) * 4, time);
         body.frequency.exponentialRampToValueAtTime(32, time + 0.35);
 
         const sub = this.ctx.createOscillator();
@@ -1306,12 +1306,21 @@ class DoomDrums {
         sub.frequency.exponentialRampToValueAtTime(20, time + 0.4);
 
         const bodyG = this.ctx.createGain();
-        bodyG.gain.setValueAtTime(0.55, time);
+        bodyG.gain.setValueAtTime(0.55 * vel, time);
         bodyG.gain.exponentialRampToValueAtTime(0.001, time + 0.5);
 
         const subG = this.ctx.createGain();
-        subG.gain.setValueAtTime(0.40, time);
+        subG.gain.setValueAtTime(0.40 * vel, time);
         subG.gain.exponentialRampToValueAtTime(0.001, time + 0.6);
+
+        // Beater attack transient
+        const beater = this.ctx.createOscillator();
+        beater.type = 'triangle';
+        beater.frequency.setValueAtTime(800, time);
+        beater.frequency.exponentialRampToValueAtTime(200, time + 0.015);
+        const beaterG = this.ctx.createGain();
+        beaterG.gain.setValueAtTime(0.2 * vel, time);
+        beaterG.gain.exponentialRampToValueAtTime(0.001, time + 0.02);
 
         // Click transient
         const clickDur = 0.008;
@@ -1321,36 +1330,38 @@ class DoomDrums {
         const clickSrc = this.ctx.createBufferSource();
         clickSrc.buffer = clickBuf;
         const clickG = this.ctx.createGain();
-        clickG.gain.value = 0.3;
+        clickG.gain.value = 0.3 * vel;
         const clickF = this.ctx.createBiquadFilter();
         clickF.type = 'highpass';
         clickF.frequency.value = 3000;
 
         body.connect(bodyG); bodyG.connect(this.dryGain);
         sub.connect(subG); subG.connect(this.dryGain);
+        beater.connect(beaterG); beaterG.connect(this.dryGain);
         clickSrc.connect(clickF); clickF.connect(clickG); clickG.connect(this.dryGain);
 
         body.start(time); body.stop(time + 0.6);
         sub.start(time); sub.stop(time + 0.7);
+        beater.start(time); beater.stop(time + 0.03);
         clickSrc.start(time);
 
         const d = Math.max(0, (time - this.ctx.currentTime) * 1000);
-        setTimeout(() => this.kickVal = 1.0, d);
+        setTimeout(() => this.kickVal = vel, d);
         setTimeout(() => this.kickVal = 0, d + 120);
         setTimeout(() => {
-            [body, sub].forEach(o => { try { o.disconnect(); } catch(e){} });
-            try { bodyG.disconnect(); subG.disconnect(); clickSrc.disconnect(); } catch(e){}
+            [body, sub, beater].forEach(o => { try { o.disconnect(); } catch(e){} });
+            try { bodyG.disconnect(); subG.disconnect(); beaterG.disconnect(); clickSrc.disconnect(); } catch(e){}
         }, (time - this.ctx.currentTime) * 1000 + 800);
     }
 
-    snare(time) {
+    snare(time, vel = 1.0) {
         const body = this.ctx.createOscillator();
         body.type = 'triangle';
-        body.frequency.setValueAtTime(210, time);
+        body.frequency.setValueAtTime(210 + (Math.random() - 0.5) * 8, time);
         body.frequency.exponentialRampToValueAtTime(130, time + 0.08);
 
         const bodyG = this.ctx.createGain();
-        bodyG.gain.setValueAtTime(0.32, time);
+        bodyG.gain.setValueAtTime(0.32 * vel, time);
         bodyG.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
 
         // Noise buzz
@@ -1360,27 +1371,42 @@ class DoomDrums {
         for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (nd.length * 0.3));
         const nSrc = this.ctx.createBufferSource();
         nSrc.buffer = nBuf;
-        const nG = this.ctx.createGain(); nG.gain.value = 0.25;
+        const nG = this.ctx.createGain(); nG.gain.value = 0.25 * vel;
         const nHP = this.ctx.createBiquadFilter();
         nHP.type = 'highpass'; nHP.frequency.value = 2000;
         const nBP = this.ctx.createBiquadFilter();
         nBP.type = 'bandpass'; nBP.frequency.value = 4000; nBP.Q.value = 1;
 
+        // Snare wire resonance
+        const wireDur = 0.35;
+        const wireBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * wireDur), this.ctx.sampleRate);
+        const wd = wireBuf.getChannelData(0);
+        for (let i = 0; i < wd.length; i++) wd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (wd.length * 0.2));
+        const wireSrc = this.ctx.createBufferSource();
+        wireSrc.buffer = wireBuf;
+        const wireG = this.ctx.createGain(); wireG.gain.value = 0.1 * vel;
+        const wireHP = this.ctx.createBiquadFilter();
+        wireHP.type = 'highpass'; wireHP.frequency.value = 5000;
+        const wireBP = this.ctx.createBiquadFilter();
+        wireBP.type = 'bandpass'; wireBP.frequency.value = 7500; wireBP.Q.value = 2;
+
         body.connect(bodyG); bodyG.connect(this.dryGain);
         nSrc.connect(nHP); nHP.connect(nBP); nBP.connect(nG); nG.connect(this.dryGain);
+        wireSrc.connect(wireHP); wireHP.connect(wireBP); wireBP.connect(wireG); wireG.connect(this.dryGain);
 
         body.start(time); body.stop(time + 0.3);
         nSrc.start(time);
+        wireSrc.start(time);
 
         const d = Math.max(0, (time - this.ctx.currentTime) * 1000);
-        setTimeout(() => this.snareVal = 1.0, d);
+        setTimeout(() => this.snareVal = vel, d);
         setTimeout(() => this.snareVal = 0, d + 80);
         setTimeout(() => {
-            try { body.disconnect(); bodyG.disconnect(); nSrc.disconnect(); nG.disconnect(); } catch(e){}
+            try { body.disconnect(); bodyG.disconnect(); nSrc.disconnect(); nG.disconnect(); wireSrc.disconnect(); wireG.disconnect(); } catch(e){}
         }, (time - this.ctx.currentTime) * 1000 + 500);
     }
 
-    hihat(time, open = false) {
+    hihat(time, open = false, vel = 1.0) {
         const dur = open ? 0.3 : 0.06;
         const nBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
         const nd = nBuf.getChannelData(0);
@@ -1388,27 +1414,41 @@ class DoomDrums {
         for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (nd.length * decay));
         const nSrc = this.ctx.createBufferSource();
         nSrc.buffer = nBuf;
-        const g = this.ctx.createGain(); g.gain.value = open ? 0.18 : 0.15;
+        const g = this.ctx.createGain(); g.gain.value = (open ? 0.18 : 0.15) * vel;
         const hp = this.ctx.createBiquadFilter();
         hp.type = 'highpass'; hp.frequency.value = 7500;
         const bp = this.ctx.createBiquadFilter();
         bp.type = 'bandpass'; bp.frequency.value = 10000; bp.Q.value = 2;
 
         nSrc.connect(hp); hp.connect(bp); bp.connect(g); g.connect(this.dryGain);
+
+        // Metallic partials for realistic cymbal tone
+        const metalDur = open ? 0.25 : 0.04;
+        [205, 340, 672, 1340].forEach(freq => {
+            const osc = this.ctx.createOscillator();
+            osc.type = 'square';
+            osc.frequency.value = freq * (1 + (Math.random() - 0.5) * 0.02);
+            const og = this.ctx.createGain();
+            og.gain.setValueAtTime(0.015 * vel, time);
+            og.gain.exponentialRampToValueAtTime(0.001, time + metalDur);
+            osc.connect(og); og.connect(this.dryGain);
+            osc.start(time); osc.stop(time + metalDur + 0.01);
+        });
+
         nSrc.start(time);
 
         setTimeout(() => { try { nSrc.disconnect(); g.disconnect(); } catch(e){} },
             (time - this.ctx.currentTime) * 1000 + 500);
     }
 
-    ride(time, bell = false) {
+    ride(time, bell = false, vel = 1.0) {
         const dur = 0.8;
         const nBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
         const nd = nBuf.getChannelData(0);
         for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (nd.length * 0.6));
         const nSrc = this.ctx.createBufferSource();
         nSrc.buffer = nBuf;
-        const g = this.ctx.createGain(); g.gain.value = 0.1;
+        const g = this.ctx.createGain(); g.gain.value = 0.1 * vel;
         const hp = this.ctx.createBiquadFilter();
         hp.type = 'highpass'; hp.frequency.value = 5000;
         const pk = this.ctx.createBiquadFilter();
@@ -1416,12 +1456,24 @@ class DoomDrums {
 
         nSrc.connect(hp); hp.connect(pk); pk.connect(g); g.connect(this.dryGain);
 
+        // Metallic ring partials
+        [340, 710, 1420, 2850].forEach(freq => {
+            const osc = this.ctx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.value = freq * (1 + (Math.random() - 0.5) * 0.015);
+            const og = this.ctx.createGain();
+            og.gain.setValueAtTime(0.01 * vel, time);
+            og.gain.exponentialRampToValueAtTime(0.001, time + 0.5);
+            osc.connect(og); og.connect(this.dryGain);
+            osc.start(time); osc.stop(time + 0.55);
+        });
+
         if (bell) {
             const bellOsc = this.ctx.createOscillator();
             bellOsc.type = 'sine';
             bellOsc.frequency.value = 4200;
             const bellG = this.ctx.createGain();
-            bellG.gain.setValueAtTime(0.04, time);
+            bellG.gain.setValueAtTime(0.04 * vel, time);
             bellG.gain.exponentialRampToValueAtTime(0.001, time + 0.5);
             bellOsc.connect(bellG); bellG.connect(this.dryGain);
             bellOsc.start(time); bellOsc.stop(time + 0.6);
@@ -1432,34 +1484,58 @@ class DoomDrums {
             (time - this.ctx.currentTime) * 1000 + 1000);
     }
 
-    tom(time, pitch = 'mid') {
+    tom(time, pitch = 'mid', vel = 1.0) {
         const freqs = { high: 200, mid: 140, low: 90 };
         const f = freqs[pitch] || 140;
         const osc = this.ctx.createOscillator();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(f, time);
+        osc.frequency.setValueAtTime(f * (1 + (Math.random() - 0.5) * 0.03), time);
         osc.frequency.exponentialRampToValueAtTime(f * 0.5, time + 0.3);
         const g = this.ctx.createGain();
-        g.gain.setValueAtTime(0.5, time);
+        g.gain.setValueAtTime(0.5 * vel, time);
         g.gain.exponentialRampToValueAtTime(0.001, time + 0.35);
+        // Skin overtone
+        const ot = this.ctx.createOscillator();
+        ot.type = 'sine';
+        ot.frequency.setValueAtTime(f * 1.6, time);
+        ot.frequency.exponentialRampToValueAtTime(f * 0.8, time + 0.15);
+        const otg = this.ctx.createGain();
+        otg.gain.setValueAtTime(0.15 * vel, time);
+        otg.gain.exponentialRampToValueAtTime(0.001, time + 0.18);
+
         osc.connect(g); g.connect(this.dryGain);
+        ot.connect(otg); otg.connect(this.dryGain);
         osc.start(time); osc.stop(time + 0.4);
-        setTimeout(() => { try { osc.disconnect(); g.disconnect(); } catch(e){} },
+        ot.start(time); ot.stop(time + 0.2);
+        setTimeout(() => { try { osc.disconnect(); g.disconnect(); ot.disconnect(); otg.disconnect(); } catch(e){} },
             (time - this.ctx.currentTime) * 1000 + 500);
     }
 
-    crash(time) {
+    crash(time, vel = 1.0) {
         const dur = 1.5;
         const nBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
         const nd = nBuf.getChannelData(0);
         for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (nd.length * 0.5));
         const nSrc = this.ctx.createBufferSource();
         nSrc.buffer = nBuf;
-        const g = this.ctx.createGain(); g.gain.value = 0.2;
+        const g = this.ctx.createGain(); g.gain.value = 0.2 * vel;
         const hp = this.ctx.createBiquadFilter();
         hp.type = 'highpass'; hp.frequency.value = 4000;
 
         nSrc.connect(hp); hp.connect(g); g.connect(this.dryGain);
+
+        // Metallic ring for crash cymbal
+        [370, 740, 1100, 2200].forEach(freq => {
+            const osc = this.ctx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.value = freq * (1 + (Math.random() - 0.5) * 0.03);
+            const og = this.ctx.createGain();
+            og.gain.setValueAtTime(0.02 * vel, time);
+            og.gain.exponentialRampToValueAtTime(0.001, time + 1.0);
+            osc.connect(og); og.connect(this.dryGain);
+            osc.start(time); osc.stop(time + 1.1);
+        });
+
         nSrc.start(time);
         setTimeout(() => { try { nSrc.disconnect(); g.disconnect(); } catch(e){} },
             (time - this.ctx.currentTime) * 1000 + 2000);
@@ -1515,7 +1591,7 @@ const SONGS = [
                     { f: N.D1, dur: 4 }, { f: N.R, dur: 1 },
                     { f: N.A1, dur: 2 }, { f: N.G1, dur: 1 },
                 ],
-                drums: "K---S---K-K-S---|K---S---K-K-S-OH",
+                drums: "K--hS--hK-KhS--h|K--hS--hK-KhSOhH",
                 padChord: null,
                 arp: null,
             },
@@ -1534,7 +1610,7 @@ const SONGS = [
                     { f: N.Bb1, dur: 3 }, { f: N.A1, dur: 1 },
                     { f: N.G1, dur: 2 }, { f: N.F1, dur: 2 },
                 ],
-                drums: "K--K--S-K--K--S-|K--K--S-K--KT-TL",
+                drums: "K-hKh-S-K-hKh-Sh|K-hKh-S-K-hKThTL",
                 padChord: null,
                 arp: null,
             },
@@ -1551,7 +1627,7 @@ const SONGS = [
                     { f: N.D1, dur: 4 }, { f: N.G1, dur: 4 },
                     { f: N.Bb1, dur: 4 }, { f: N.A1, dur: 2 }, { f: N.D1, dur: 2 },
                 ],
-                drums: "K-H-S-H-K-H-S-H-|K-H-S-H-K-H-SOH-",
+                drums: "K-H-S-H-KhH-S-Hh|K-H-S-H-KhH-SOH-",
                 padChord: [N.D3, N.F3, N.A3],
                 arp: null,
             },
@@ -1570,7 +1646,7 @@ const SONGS = [
                     { f: N.F2, dur: 2 }, { f: N.D2, dur: 2 },
                     { f: N.E2, dur: 2 }, { f: N.G2, dur: 2 },
                 ],
-                drums: "K-R-S-R-K-R-S-R-|K-R-S-R-K-R-S-RB",
+                drums: "K-R-S-R-KhR-S-Rr|K-R-S-R-KhR-SORB",
                 padChord: [N.D4, N.G4, N.Bb4],
                 arp: [N.D4, N.F4, N.G4, N.A4, N.Bb4, N.A4, N.G4, N.F4],
             },
@@ -1591,7 +1667,7 @@ const SONGS = [
                     { f: N.G2, dur: 2 }, { f: N.A2, dur: 2 },
                     { f: N.D3, dur: 2 }, { f: N.E3, dur: 2 },
                 ],
-                drums: "K-R-S-R-K-R-S-RB|K-R-S-RBK-R-SOH-",
+                drums: "K-RBS-R-KhRrS-RB|K-RBS-RBKhRrSOH-",
                 padChord: [N.A3, N.D4, N.E4, N.G4],
                 arp: [N.A4, N.D5, N.E5, N.G5, N.A5, N.G5, N.E5, N.D5],
             },
@@ -1609,7 +1685,7 @@ const SONGS = [
                     { f: N.Bb1, dur: 3 }, { f: N.A1, dur: 1 },
                     { f: N.G1, dur: 2 }, { f: N.D1, dur: 2 },
                 ],
-                drums: "K---S-H-K-K-S---|K---S-H-K-K-SOHT",
+                drums: "K-h-S-H-KhH-S-Hh|K-h-S-H-KhH-SOHT",
                 padChord: [N.D3, N.F3, N.A3],
                 arp: null,
             },
@@ -1631,7 +1707,7 @@ const SONGS = [
                     { f: N.G1, dur: 3 }, { f: N.F1, dur: 1 },
                     { f: N.D1, dur: 4 }, { f: N.R, dur: 2 },
                 ],
-                drums: "K-------S-------|K-------S---T-TL",
+                drums: "K---h---S---h---|K---h---S---ThTL",
                 padChord: null,
                 arp: null,
             },
@@ -1654,7 +1730,7 @@ const SONGS = [
                     { f: N.E2, dur: 2 }, { f: N.D2, dur: 2 },
                     { f: N.E2, dur: 2 }, { f: N.G2, dur: 2 },
                 ],
-                drums: "K-R-S-R-K-R-S-R-|K-RBS-R-K-R-SOH-",
+                drums: "K-R-S-R-KhRBS-Rr|K-RBS-R-KhR-SOH-",
                 padChord: [N.E3, N.G3, N.B3, N.D4],
                 arp: [N.E4, N.G4, N.B4, N.D5, N.E5, N.D5, N.B4, N.G4],
             },
@@ -1672,7 +1748,7 @@ const SONGS = [
                     { f: N.D2, dur: 2 }, { f: N.E1, dur: 2 },
                     { f: N.F1, dur: 2 }, { f: N.E1, dur: 2 },
                 ],
-                drums: "K--KS-H-K--KS-H-|K--KS-H-K--KS-OHT",
+                drums: "K-hKS-H-K-hKS-Hh|K-hKS-H-K-hKSOHT",
                 padChord: [N.E3, N.A3, N.B3],
                 arp: [N.E4, N.A4, N.B4, N.E5],
             },
@@ -1694,7 +1770,7 @@ const SONGS = [
                     { f: N.E1, dur: 4 },
                     { f: N.G1, dur: 2 }, { f: N.F1, dur: 1 }, { f: N.E1, dur: 1 },
                 ],
-                drums: "K---S---K-K-S---|K---S---K-K-S-TL",
+                drums: "K--hS--hK-KhS--h|K--hS--hK-KhS-TL",
                 padChord: null,
                 arp: null,
             },
@@ -1712,7 +1788,7 @@ const SONGS = [
                     { f: N.A1, dur: 2 }, { f: N.G1, dur: 2 },
                     { f: N.A1, dur: 2 }, { f: N.D2, dur: 2 },
                 ],
-                drums: "K-H-S-H-K-H-S-H-|K-H-S-H-K-H-SOH-",
+                drums: "K-H-S-H-KhH-S-Hh|K-H-S-H-KhH-SOH-",
                 padChord: [N.A3, N.D4, N.E4],
                 arp: [N.A4, N.D5, N.E5, N.A5, N.E5, N.D5],
             },
@@ -1735,7 +1811,7 @@ const SONGS = [
                     { f: N.G2, dur: 2 }, { f: N.D2, dur: 2 },
                     { f: N.E2, dur: 2 }, { f: N.A2, dur: 2 },
                 ],
-                drums: "K-RBS-R-K-RBS-R-|K-RBS-RBK-RBS-OH-",
+                drums: "K-RBS-RBK-RBS-RB|K-RBS-RBK-RBSOH-",
                 padChord: [N.D4, N.G4, N.A4, N.B4],
                 arp: [N.D5, N.G5, N.A5, N.B5, N.D5, N.A5, N.G5, N.E5],
             },
@@ -1763,7 +1839,7 @@ const SONGS = [
                     { f: N.D1, dur: 4 },
                     { f: N.G1, dur: 2 }, { f: N.F1, dur: 1 }, { f: N.D1, dur: 1 },
                 ],
-                drums: "K-------S-------|K-------S-----TL",
+                drums: "K---h---S---h---|K---h---S---h-TL",
                 padChord: null,
                 arp: null,
             },
@@ -1789,7 +1865,7 @@ const SONGS = [
                     { f: N.F1, dur: 2 }, { f: N.D1, dur: 2 },
                     { f: N.Bb1, dur: 2 }, { f: N.G1, dur: 2 },
                 ],
-                drums: "K-K-S---K-K-S---|K-K-S---K-K-S-TL",
+                drums: "K-KhS--hK-KhS--h|K-KhS--hK-KhShTL",
                 padChord: null,
                 arp: null,
             },
@@ -1809,7 +1885,7 @@ const SONGS = [
                     { f: N.D1, dur: 4 }, { f: N.G1, dur: 4 },
                     { f: N.Bb1, dur: 4 }, { f: N.D1, dur: 4 },
                 ],
-                drums: "K---S---K-K-S---|K---S---K---S-TL",
+                drums: "K--hS--hK-KhS--h|K--hS--hK--hShTL",
                 padChord: null,
                 arp: null,
             },
@@ -1832,7 +1908,7 @@ const SONGS = [
                     { f: N.D1, dur: 4 }, { f: N.G1, dur: 2 }, { f: N.Bb1, dur: 2 },
                     { f: N.A1, dur: 4 }, { f: N.G1, dur: 2 }, { f: N.D1, dur: 2 },
                 ],
-                drums: "K-H-S-H-K-H-S-OH|K-H-S-H-K-H-S-OH",
+                drums: "K-H-S-HhK-H-SOH-|K-H-S-HhK-H-SOH-",
                 padChord: null,
                 arp: null,
             },
@@ -1850,7 +1926,7 @@ const SONGS = [
                     { f: N.Eb1, dur: 2 },
                     { f: N.D1, dur: 6 },
                 ],
-                drums: "K-------S-------|K-------S-----TL",
+                drums: "K---h---S---h---|K---h---S---h-TL",
                 padChord: null,
                 arp: null,
             },
@@ -1875,7 +1951,7 @@ const SONGS = [
                     { f: N.G1, dur: 2 }, { f: N.F1, dur: 1 }, { f: N.Eb1, dur: 1 },
                     { f: N.D1, dur: 2 }, { f: N.R, dur: 2 },
                 ],
-                drums: "K---R---K---R---|K---R---K---R-RB",
+                drums: "K-R-r-R-K-R-r-R-|K-R-r-R-K-R-r-RB",
                 padChord: null,
                 arp: null,
             },
@@ -1895,7 +1971,7 @@ const SONGS = [
                     { f: N.D1, dur: 2 }, { f: N.Eb1, dur: 1 }, { f: N.F1, dur: 1 },
                     { f: N.G1, dur: 2 }, { f: N.A1, dur: 1 }, { f: N.G1, dur: 1 },
                 ],
-                drums: "K-R-R-RBK-R-R-RB|K-R-R-RBK-R-SORB",
+                drums: "K-RrR-RBK-Rrs-RB|K-RrR-RBK-RrSORB",
                 padChord: null,
                 arp: null,
             },
@@ -1917,7 +1993,7 @@ const SONGS = [
                     { f: N.Eb1, dur: 2 }, { f: N.D1, dur: 1 }, { f: N.Eb1, dur: 1 },
                     { f: N.D1, dur: 2 }, { f: N.G1, dur: 1 }, { f: N.F1, dur: 1 },
                 ],
-                drums: "K-R-S-R-K-R-S-RB|K-R-S-R-K-R-S-RB",
+                drums: "K-R-S-R-KhR-S-RB|K-R-S-R-KhR-SORB",
                 padChord: null,
                 arp: null,
             },
@@ -1936,7 +2012,7 @@ const SONGS = [
                     { f: N.A1, dur: 2 }, { f: N.G1, dur: 1 }, { f: N.F1, dur: 1 },
                     { f: N.Eb1, dur: 1 }, { f: N.D1, dur: 1 }, { f: N.G1, dur: 1 }, { f: N.D1, dur: 1 },
                 ],
-                drums: "K-R-S-R-K-R-S-OH|K-R-S-R-K-R-SORB",
+                drums: "K-R-S-R-KhR-SOH-|K-R-S-RBKhR-SORB",
                 padChord: [N.D3, N.G3, N.Bb3],
                 arp: null,
             },
@@ -1954,7 +2030,7 @@ const SONGS = [
                     { f: N.Eb1, dur: 4 },
                     { f: N.D1, dur: 4 },
                 ],
-                drums: "K-------R-------|K-------R-----RB",
+                drums: "K---r---R---r---|K---r---R---r-RB",
                 padChord: null,
                 arp: null,
             },
@@ -1986,7 +2062,7 @@ const SONGS = [
                     { f: N.G1, dur: 3 }, { f: N.F1, dur: 1 },
                     { f: N.E1, dur: 4 }, { f: N.R, dur: 2 },
                 ],
-                drums: "K-------S-------|K-------S---T-TL",
+                drums: "K---h---S---h---|K---h---S---ThTL",
                 padChord: null,
                 arp: null,
             },
@@ -2015,7 +2091,7 @@ const SONGS = [
                     { f: N.Bb1, dur: 2 }, { f: N.A1, dur: 1 }, { f: N.G1, dur: 1 },
                     { f: N.E1, dur: 2 }, { f: N.R, dur: 2 },
                 ],
-                drums: "K-K-S---K-K-S---|K-K-S---K-K-S-TL",
+                drums: "K-KhS--hK-KhS--h|K-KhS--hK-KhShTL",
                 padChord: null,
                 arp: null,
             },
@@ -2039,7 +2115,7 @@ const SONGS = [
                     { f: N.E1, dur: 8 },
                     { f: N.F1, dur: 2 }, { f: N.E1, dur: 6 },
                 ],
-                drums: "K-------S-------|K-----------T-TL",
+                drums: "K---h---S---h---|K---h-------ThTL",
                 padChord: null,
                 arp: null,
             },
@@ -2063,7 +2139,7 @@ const SONGS = [
                     { f: N.B1, dur: 3 }, { f: N.A1, dur: 1 },
                     { f: N.G1, dur: 2 }, { f: N.F1, dur: 1 }, { f: N.E1, dur: 1 },
                 ],
-                drums: "K---S---K-K-S---|K---S---K-K-S-OH",
+                drums: "K--hS--hK-KhS--h|K--hS--hK-KhSOhH",
                 padChord: null,
                 arp: null,
             },
@@ -2086,7 +2162,7 @@ const SONGS = [
                     { f: N.E1, dur: 4 }, { f: N.R, dur: 1 },
                     { f: N.F1, dur: 2 }, { f: N.E1, dur: 1 },
                 ],
-                drums: "K--K--S-K--K--S-|K--K--S-K--KT-TL",
+                drums: "K-hKh-S-K-hKh-Sh|K-hKh-S-K-hKThTL",
                 padChord: null,
                 arp: null,
             },
@@ -2105,7 +2181,7 @@ const SONGS = [
                     { f: N.F1, dur: 4 },
                     { f: N.E1, dur: 10 },
                 ],
-                drums: "K-------S-------|K-----------S-TL",
+                drums: "K---h---S---h---|K---h---h---ShTL",
                 padChord: null,
                 arp: null,
             },
@@ -2312,22 +2388,60 @@ class SongSequencer {
             bassDur += noteDuration;
         });
 
-        // Schedule drums using pattern string
+        // Schedule drums on beat-locked 16th-note grid with humanization
         const patternDur = Math.max(guitarDur, bassDur);
         const drumStr = section.drums.replace(/\|/g, '');
-        const stepDur = patternDur / drumStr.length;
-        for (let i = 0; i < drumStr.length; i++) {
-            const stepTime = t + i * stepDur;
-            const ch = drumStr[i];
-            if (ch === 'K') this.drums.kick(stepTime);
-            else if (ch === 'S') this.drums.snare(stepTime);
-            else if (ch === 'H') this.drums.hihat(stepTime);
-            else if (ch === 'O') this.drums.hihat(stepTime, true);
-            else if (ch === 'R') this.drums.ride(stepTime);
-            else if (ch === 'B') this.drums.ride(stepTime, true);
-            else if (ch === 'T') this.drums.tom(stepTime, 'high');
-            else if (ch === 'L') this.drums.tom(stepTime, 'low');
-            else if (ch === 'C') this.drums.crash(stepTime);
+        const stepDur = beatDur / 4; // Each character = one 16th note
+        const totalSteps = Math.round(patternDur / stepDur);
+        const drumLen = drumStr.length;
+
+        // Compute bass note onset times for kick accent alignment
+        const bassOnsets = [];
+        let bassT = 0;
+        section.bass.forEach(note => {
+            if (note.f !== 0) bassOnsets.push(bassT);
+            bassT += note.dur * beatDur;
+        });
+
+        for (let i = 0; i < totalSteps; i++) {
+            const ch = drumStr[i % drumLen];
+            if (ch === '-') continue;
+            const isGhost = ch !== ch.toUpperCase();
+            const upper = ch.toUpperCase();
+            // Velocity: ghost notes soft, normal with natural variation
+            let vel = isGhost
+                ? 0.3 + Math.random() * 0.12
+                : 0.78 + Math.random() * 0.22;
+            // Micro-timing humanization (less jitter on kick/snare for tightness)
+            const isKS = upper === 'K' || upper === 'S';
+            const jitter = isKS
+                ? (Math.random() - 0.5) * 0.004
+                : (Math.random() - 0.5) * 0.012;
+            const stepTime = t + i * stepDur + jitter;
+            // Accent kick when landing with bass note onset
+            if (upper === 'K') {
+                const nearBass = bassOnsets.some(bt => Math.abs(i * stepDur - bt) < stepDur * 1.5);
+                if (nearBass) vel = Math.min(vel * 1.15, 1.0);
+                this.drums.kick(stepTime, vel);
+            } else if (upper === 'S') {
+                this.drums.snare(stepTime, vel);
+            } else if (upper === 'H') {
+                this.drums.hihat(stepTime, false, vel);
+            } else if (upper === 'O') {
+                this.drums.hihat(stepTime, true, vel);
+            } else if (upper === 'R') {
+                this.drums.ride(stepTime, false, vel);
+            } else if (upper === 'B') {
+                this.drums.ride(stepTime, true, vel);
+            } else if (upper === 'T') {
+                this.drums.tom(stepTime, 'high', vel);
+            } else if (upper === 'M') {
+                this.drums.tom(stepTime, 'mid', vel);
+            } else if (upper === 'L') {
+                this.drums.tom(stepTime, 'low', vel);
+            } else if (upper === 'C') {
+                this.drums.crash(stepTime, vel);
+            }
         }
 
         // Schedule pad for whole section
