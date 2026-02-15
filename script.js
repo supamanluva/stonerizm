@@ -856,6 +856,36 @@ class RealisticGuitar {
         this.reverbWet.gain.value = 0.2;
     }
 
+    setSleepTone() {
+        // Matt Pike's massive wall-of-fuzz tone
+        this.tsBass.gain.value = 6;
+        this.tsMid.gain.value = 0;
+        this.tsTreble.gain.value = -10;
+        this.cabLP.frequency.value = 3500;
+        this.preampDrive.curve = this._tubeSaturation(9.0);
+        this.preampDrive2.curve = this._tubeSaturation(5.0);
+        this.delay.delayTime.value = 0.35;
+        this.delayFB.gain.value = 0.1;
+        this.delayWet.gain.value = 0.03;
+        this.reverbWet.gain.value = 0.06;
+        this.masterGain.gain.value = 0.28;
+    }
+
+    setOmCleanTone() {
+        // Minimal guitar for OM - bass leads the way
+        this.tsBass.gain.value = 2;
+        this.tsMid.gain.value = -1;
+        this.tsTreble.gain.value = -4;
+        this.cabLP.frequency.value = 5000;
+        this.preampDrive.curve = this._tubeSaturation(2.0);
+        this.preampDrive2.curve = this._tubeSaturation(1.5);
+        this.delay.delayTime.value = 0.55;
+        this.delayFB.gain.value = 0.3;
+        this.delayWet.gain.value = 0.15;
+        this.reverbWet.gain.value = 0.25;
+        this.masterGain.gain.value = 0.12;
+    }
+
     fadeOut() { this.masterGain.gain.linearRampToValueAtTime(0.0001, this.ctx.currentTime + 0.5); }
     fadeIn() {
         this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
@@ -972,6 +1002,38 @@ class BassGuitar {
         this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
         this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
         this.masterGain.gain.linearRampToValueAtTime(0.35, this.ctx.currentTime + 0.5);
+    }
+
+    setOmTone() {
+        // Al Cisneros' massive Orange/Matamp bass tone - rich overtones
+        const n = 44100, curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve[i] = Math.tanh(x * 4.0); }
+        this.drive.curve = curve;
+        this.bassBoost.gain.value = 10;
+        this.midCut.gain.value = -1;
+        this.cabLP.frequency.value = 3500;
+        this.masterGain.gain.value = 0.5;
+    }
+
+    setSleepTone() {
+        // Fuzz bass matching Sleep's crushing guitar wall
+        const n = 44100, curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve[i] = Math.tanh(x * 5.0); }
+        this.drive.curve = curve;
+        this.bassBoost.gain.value = 8;
+        this.midCut.gain.value = -6;
+        this.cabLP.frequency.value = 2500;
+        this.masterGain.gain.value = 0.42;
+    }
+
+    setDoomTone() {
+        const n = 44100, curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve[i] = Math.tanh(x * 2.5); }
+        this.drive.curve = curve;
+        this.bassBoost.gain.value = 6;
+        this.midCut.gain.value = -4;
+        this.cabLP.frequency.value = 3000;
+        this.masterGain.gain.value = 0.35;
     }
 }
 
@@ -1633,6 +1695,225 @@ const SONGS = [
             },
         ]
     },
+    {
+        name: "DOPESMOKER",
+        style: "sleep",
+        sections: [
+            {
+                name: "THE WEEDIAN",
+                genre: 0.0, bpm: 36, repeats: 4, visualMode: 0,
+                guitar: [
+                    { f: N.D1, dur: 4 },
+                    { f: N.R, dur: 1 },
+                    { f: N.D1, dur: 2, pm: true },
+                    { f: N.Eb1, dur: 1, slide: true },
+                    { f: N.D1, dur: 4 },
+                    { f: N.G1, dur: 2 },
+                    { f: N.F1, dur: 1 },
+                    { f: N.D1, dur: 1 },
+                ],
+                bass: [
+                    { f: N.D1, dur: 4 }, { f: N.D1, dur: 4 },
+                    { f: N.D1, dur: 4 },
+                    { f: N.G1, dur: 2 }, { f: N.F1, dur: 1 }, { f: N.D1, dur: 1 },
+                ],
+                drums: "K-------S-------|K-------S-----TL",
+                padChord: null,
+                arp: null,
+            },
+            {
+                name: "DRAGONAUT",
+                genre: 0.0, bpm: 48, repeats: 4, visualMode: 1,
+                guitar: [
+                    { f: N.D1, dur: 2, pm: true },
+                    { f: N.R, dur: 1 },
+                    { f: N.D1, dur: 1, pm: true },
+                    { f: N.F1, dur: 2 },
+                    { f: N.G1, dur: 2 },
+                    { f: N.F1, dur: 1 },
+                    { f: N.D1, dur: 1 },
+                    { f: N.D1, dur: 1, pm: true },
+                    { f: N.R, dur: 1 },
+                    { f: N.Bb1, dur: 2 },
+                    { f: N.A1, dur: 1 },
+                    { f: N.G1, dur: 1 },
+                ],
+                bass: [
+                    { f: N.D1, dur: 4 }, { f: N.F1, dur: 2 }, { f: N.G1, dur: 2 },
+                    { f: N.F1, dur: 2 }, { f: N.D1, dur: 2 },
+                    { f: N.Bb1, dur: 2 }, { f: N.G1, dur: 2 },
+                ],
+                drums: "K-K-S---K-K-S---|K-K-S---K-K-S-TL",
+                padChord: null,
+                arp: null,
+            },
+            {
+                name: "HOLY MOUNTAIN",
+                genre: 0.0, bpm: 44, repeats: 3, visualMode: 0,
+                guitar: [
+                    { f: N.D1, dur: 3 },
+                    { f: N.F1, dur: 1 },
+                    { f: N.G1, dur: 4 },
+                    { f: N.Bb1, dur: 3 },
+                    { f: N.A1, dur: 1 },
+                    { f: N.G1, dur: 2 },
+                    { f: N.D1, dur: 2 },
+                ],
+                bass: [
+                    { f: N.D1, dur: 4 }, { f: N.G1, dur: 4 },
+                    { f: N.Bb1, dur: 4 }, { f: N.D1, dur: 4 },
+                ],
+                drums: "K---S---K-K-S---|K---S---K---S-TL",
+                padChord: null,
+                arp: null,
+            },
+            {
+                name: "AQUARIAN",
+                genre: 0.1, bpm: 52, repeats: 3, visualMode: 1,
+                guitar: [
+                    { f: N.D2, dur: 2 },
+                    { f: N.F2, dur: 1 },
+                    { f: N.G2, dur: 1 },
+                    { f: N.D2, dur: 2 },
+                    { f: N.R, dur: 1 },
+                    { f: N.Bb1, dur: 1 },
+                    { f: N.A1, dur: 2 },
+                    { f: N.G1, dur: 2 },
+                    { f: N.F1, dur: 2 },
+                    { f: N.D1, dur: 2 },
+                ],
+                bass: [
+                    { f: N.D1, dur: 4 }, { f: N.G1, dur: 2 }, { f: N.Bb1, dur: 2 },
+                    { f: N.A1, dur: 4 }, { f: N.G1, dur: 2 }, { f: N.D1, dur: 2 },
+                ],
+                drums: "K-H-S-H-K-H-S-OH|K-H-S-H-K-H-S-OH",
+                padChord: null,
+                arp: null,
+            },
+            {
+                name: "SONIC TITAN",
+                genre: 0.0, bpm: 38, repeats: 3, visualMode: 0,
+                guitar: [
+                    { f: N.D1, dur: 8 },
+                    { f: N.R, dur: 2 },
+                    { f: N.Eb1, dur: 2, slide: true },
+                    { f: N.D1, dur: 4 },
+                ],
+                bass: [
+                    { f: N.D1, dur: 8 },
+                    { f: N.Eb1, dur: 2 },
+                    { f: N.D1, dur: 6 },
+                ],
+                drums: "K-------S-------|K-------S-----TL",
+                padChord: null,
+                arp: null,
+            },
+        ]
+    },
+    {
+        name: "ADVAITIC SONGS",
+        style: "om",
+        sections: [
+            {
+                name: "MANTRA OF THE PILGRIM",
+                genre: 0.0, bpm: 50, repeats: 4, visualMode: 0,
+                guitar: [
+                    { f: N.D2, dur: 4 },
+                    { f: N.R, dur: 4 },
+                    { f: N.Eb2, dur: 4 },
+                    { f: N.D2, dur: 4 },
+                ],
+                bass: [
+                    { f: N.D1, dur: 2 }, { f: N.Eb1, dur: 1 }, { f: N.F1, dur: 1 },
+                    { f: N.D1, dur: 2 }, { f: N.Eb1, dur: 1 }, { f: N.D1, dur: 1 },
+                    { f: N.G1, dur: 2 }, { f: N.F1, dur: 1 }, { f: N.Eb1, dur: 1 },
+                    { f: N.D1, dur: 2 }, { f: N.R, dur: 2 },
+                ],
+                drums: "K---R---K---R---|K---R---K---R-RB",
+                padChord: null,
+                arp: null,
+            },
+            {
+                name: "AT GIZA",
+                genre: 0.05, bpm: 54, repeats: 4, visualMode: 0,
+                guitar: [
+                    { f: N.R, dur: 4 },
+                    { f: N.D2, dur: 4 },
+                    { f: N.R, dur: 4 },
+                    { f: N.Eb2, dur: 2 },
+                    { f: N.D2, dur: 2 },
+                ],
+                bass: [
+                    { f: N.D1, dur: 2 }, { f: N.F1, dur: 2 },
+                    { f: N.G1, dur: 2 }, { f: N.F1, dur: 1 }, { f: N.Eb1, dur: 1 },
+                    { f: N.D1, dur: 2 }, { f: N.Eb1, dur: 1 }, { f: N.F1, dur: 1 },
+                    { f: N.G1, dur: 2 }, { f: N.A1, dur: 1 }, { f: N.G1, dur: 1 },
+                ],
+                drums: "K-R-R-RBK-R-R-RB|K-R-R-RBK-R-SORB",
+                padChord: null,
+                arp: null,
+            },
+            {
+                name: "STATE OF NON-RETURN",
+                genre: 0.1, bpm: 48, repeats: 3, visualMode: 1,
+                guitar: [
+                    { f: N.D2, dur: 4 },
+                    { f: N.Eb2, dur: 2 },
+                    { f: N.G2, dur: 2 },
+                    { f: N.Eb2, dur: 2 },
+                    { f: N.D2, dur: 4 },
+                    { f: N.F2, dur: 1 },
+                    { f: N.Eb2, dur: 1 },
+                ],
+                bass: [
+                    { f: N.D1, dur: 2 }, { f: N.Eb1, dur: 1 }, { f: N.G1, dur: 1 },
+                    { f: N.A1, dur: 2 }, { f: N.G1, dur: 1 }, { f: N.F1, dur: 1 },
+                    { f: N.Eb1, dur: 2 }, { f: N.D1, dur: 1 }, { f: N.Eb1, dur: 1 },
+                    { f: N.D1, dur: 2 }, { f: N.G1, dur: 1 }, { f: N.F1, dur: 1 },
+                ],
+                drums: "K-R-S-R-K-R-S-RB|K-R-S-R-K-R-S-RB",
+                padChord: null,
+                arp: null,
+            },
+            {
+                name: "THEBES",
+                genre: 0.3, bpm: 56, repeats: 3, visualMode: 2,
+                guitar: [
+                    { f: N.D2, dur: 2 }, { f: N.G2, dur: 1 }, { f: N.A2, dur: 1 },
+                    { f: N.Bb2, dur: 2 }, { f: N.A2, dur: 1 }, { f: N.G2, dur: 1 },
+                    { f: N.F2, dur: 2 }, { f: N.D2, dur: 2 },
+                    { f: N.Eb2, dur: 2 }, { f: N.D2, dur: 2 },
+                ],
+                bass: [
+                    { f: N.D1, dur: 2 }, { f: N.G1, dur: 2 },
+                    { f: N.A1, dur: 2 }, { f: N.Bb1, dur: 2 },
+                    { f: N.A1, dur: 2 }, { f: N.G1, dur: 1 }, { f: N.F1, dur: 1 },
+                    { f: N.Eb1, dur: 1 }, { f: N.D1, dur: 1 }, { f: N.G1, dur: 1 }, { f: N.D1, dur: 1 },
+                ],
+                drums: "K-R-S-R-K-R-S-OH|K-R-S-R-K-R-SORB",
+                padChord: [N.D3, N.G3, N.Bb3],
+                arp: null,
+            },
+            {
+                name: "MEDITATION IS THE PRACTICE OF DEATH",
+                genre: 0.0, bpm: 40, repeats: 3, visualMode: 0,
+                guitar: [
+                    { f: N.D2, dur: 8 },
+                    { f: N.R, dur: 4 },
+                    { f: N.Eb2, dur: 2 },
+                    { f: N.D2, dur: 2 },
+                ],
+                bass: [
+                    { f: N.D1, dur: 8 },
+                    { f: N.Eb1, dur: 4 },
+                    { f: N.D1, dur: 4 },
+                ],
+                drums: "K-------R-------|K-------R-----RB",
+                padChord: null,
+                arp: null,
+            },
+        ]
+    },
 ];
 
 
@@ -1677,9 +1958,17 @@ class SongSequencer {
         const section = song.sections[this.currentSection];
         this.targetGenre = section.genre;
 
-        // Apply instrument tones
+        // Apply instrument tones based on song style
         const g = section.genre;
-        if (g < 0.3) {
+        if (song.style === 'sleep') {
+            this.guitar.setSleepTone();
+            this.bass.setSleepTone();
+            this.drums.setDoomRoom();
+        } else if (song.style === 'om') {
+            this.guitar.setOmCleanTone();
+            this.bass.setOmTone();
+            this.drums.setDoomRoom();
+        } else if (g < 0.3) {
             this.guitar.setDoomTone();
             this.drums.setDoomRoom();
         } else if (g > 0.6) {
@@ -1710,7 +1999,9 @@ class SongSequencer {
 
     showSection(songName, sectionName, genre) {
         let icon, label;
-        if (genre < 0.2) { icon = '\uD83E\uDDA3'; label = 'STONER DOOM'; }
+        if (songName === 'DOPESMOKER') { icon = '\uD83C\uDF3F'; label = 'SLEEP'; }
+        else if (songName === 'ADVAITIC SONGS') { icon = '\uD83D\uDD49\uFE0F'; label = 'OM'; }
+        else if (genre < 0.2) { icon = '\uD83E\uDDA3'; label = 'STONER DOOM'; }
         else if (genre < 0.5) { icon = '\uD83E\uDDA3'; label = 'DOOM RISING'; }
         else if (genre < 0.75) { icon = '\uD83D\uDE80'; label = 'SPACE ROCK'; }
         else { icon = '\uD83C\uDF0C'; label = 'KRAUTROCK'; }
