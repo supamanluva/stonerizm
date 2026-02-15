@@ -906,7 +906,7 @@ class RealisticGuitar {
         this.tsBass.gain.value = 7;
         this.tsMid.gain.value = -5;
         this.tsTreble.gain.value = -6;
-        this.tsPresence.gain.value = 5;
+        this.presence.gain.value = 5;
         this.cabLP.frequency.value = 3800;
         this.cabHP.frequency.value = 90;
         this.cabResonance.gain.value = 6;
@@ -2136,6 +2136,8 @@ class SongSequencer {
         this.shuffleMode = false;
         this.shuffleOrder = [];
         this.shuffleIndex = 0;
+        this._generation = 0;
+        this._pendingTransitionTimeouts = [];
     }
 
     _buildShuffleOrder() {
@@ -2167,7 +2169,10 @@ class SongSequencer {
 
     playSong(index) {
         if (index < 0 || index >= SONGS.length) return;
-        console.log('[STONERIZM] playSong:', index, SONGS[index].name);
+        // Cancel all pending transition timeouts to prevent stale applySection calls
+        this._generation++;
+        this._pendingTransitionTimeouts.forEach(id => clearTimeout(id));
+        this._pendingTransitionTimeouts = [];
         this.currentSong = index;
         this.currentSection = 0;
         this.currentRepeat = 0;
@@ -2372,7 +2377,14 @@ class SongSequencer {
 
             // Apply next section after the transition
             const transitionDelay = Math.max(0, (this.scheduledUntil - now) * 1000);
-            setTimeout(() => this.applySection(), transitionDelay);
+            const gen = this._generation;
+            const tid = setTimeout(() => {
+                // Remove this timeout from the tracking array
+                const idx = this._pendingTransitionTimeouts.indexOf(tid);
+                if (idx !== -1) this._pendingTransitionTimeouts.splice(idx, 1);
+                if (this._generation === gen) this.applySection();
+            }, transitionDelay);
+            this._pendingTransitionTimeouts.push(tid);
         }
     }
 }
@@ -2453,7 +2465,6 @@ window.addEventListener('keydown', (e) => {
                     btn.textContent = song.name;
                     btn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        console.log('[STONERIZM] Song button clicked:', i, song.name, 'isPlaying:', sequencer?.isPlaying);
                         if (sequencer && sequencer.isPlaying) sequencer.playSong(i);
                     });
                     songList.appendChild(btn);
