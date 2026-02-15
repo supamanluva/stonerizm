@@ -1,368 +1,441 @@
-const canvas = document.getElementById('glCanvas');
-const gl = canvas.getContext('webgl');
+// =====================================================
+// STONERIZM — MELODIC DOOM / SPACE ROCK ENGINE
+// Realistic instruments • Genre transitions • Visual sync
+// =====================================================
 
-if (!gl) {
-    alert('Unable to initialize WebGL. Your browser or machine may not support it.');
-}
+const canvas = document.getElementById('glCanvas');
+const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
 
 // ===== VERTEX SHADER =====
 const vsSource = `
-    attribute vec4 aVertexPosition;
-    varying vec2 vUv;
-    void main(void) {
-        gl_Position = aVertexPosition;
-        vUv = aVertexPosition.xy * 0.5 + 0.5;
-    }
+attribute vec4 aVertexPosition;
+varying vec2 vUv;
+void main() {
+    gl_Position = aVertexPosition;
+    vUv = aVertexPosition.xy * 0.5 + 0.5;
+}
 `;
 
-// ===== FRAGMENT SHADER - MAMMOTH DOOM CORE =====
+// ===== FRAGMENT SHADER =====
 const fsSource = `
-    precision highp float;
-    uniform float u_time;
-    uniform vec2 u_resolution;
-    uniform vec2 u_mouse;
-    uniform float u_audio;
-    uniform float u_mode;
-    uniform float u_hyper;
-    uniform sampler2D u_webcam;
-    uniform float u_webcamEnabled;
-    uniform sampler2D u_prevFrame;
+precision mediump float;
 
-    // Doom-reactive uniforms
-    uniform float u_bass;
-    uniform float u_mid;
-    uniform float u_high;
-    uniform float u_doomMode;
-    uniform float u_riffPhase;
-    uniform float u_noteFreq;
-    uniform float u_noteOn;
-    uniform float u_riffFlash;
-    uniform float u_kick;
-    uniform float u_snare;
+uniform vec2 u_resolution;
+uniform float u_time;
+uniform vec2 u_mouse;
+uniform float u_audio;
+uniform float u_mode;
+uniform float u_hyper;
+uniform sampler2D u_webcam;
+uniform float u_webcamEnabled;
+uniform sampler2D u_prevFrame;
 
-    varying vec2 vUv;
+// Music-reactive uniforms
+uniform float u_bass;
+uniform float u_mid;
+uniform float u_high;
+uniform float u_doomMode;
+uniform float u_riffPhase;
+uniform float u_noteFreq;
+uniform float u_noteOn;
+uniform float u_riffFlash;
+uniform float u_kick;
+uniform float u_snare;
+// Genre blend: 0.0 = pure doom, 1.0 = pure space rock
+uniform float u_genre;
 
-    mat2 rot(float a) {
-        float s = sin(a);
-        float c = cos(a);
-        return mat2(c, -s, s, c);
+varying vec2 vUv;
+
+mat2 rot(float a) {
+    float s = sin(a), c = cos(a);
+    return mat2(c, -s, s, c);
+}
+
+vec3 palette(float t) {
+    vec3 a = vec3(0.5); vec3 b = vec3(0.5);
+    vec3 c = vec3(1.0); vec3 d = vec3(0.263, 0.416, 0.557);
+    return a + b * cos(6.28318 * (c * t + d));
+}
+
+// Doom palette: deep reds, burnt oranges, void purples
+vec3 doomPalette(float t, float bass) {
+    vec3 a = vec3(0.4, 0.08, 0.02);
+    vec3 b = vec3(0.35, 0.12, 0.08);
+    vec3 c = vec3(1.0, 0.6, 0.3);
+    vec3 d = vec3(0.0, 0.15, 0.2);
+    vec3 base = a + b * cos(6.28318 * (c * t + d));
+    base += vec3(0.15, 0.0, 0.08) * bass;
+    return base;
+}
+
+// Space rock palette: deep blues, purples, nebula pinks, cosmic cyan
+vec3 spacePalette(float t, float high) {
+    vec3 a = vec3(0.08, 0.05, 0.2);
+    vec3 b = vec3(0.3, 0.15, 0.35);
+    vec3 c = vec3(0.8, 1.2, 0.6);
+    vec3 d = vec3(0.6, 0.3, 0.7);
+    vec3 base = a + b * cos(6.28318 * (c * t + d));
+    base += vec3(0.0, 0.05, 0.15) * high;
+    return base;
+}
+
+float random(vec2 st) {
+    return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
+}
+
+float noise(vec2 st) {
+    vec2 i = floor(st);
+    vec2 f = fract(st);
+    float a = random(i);
+    float b = random(i + vec2(1.0, 0.0));
+    float c = random(i + vec2(0.0, 1.0));
+    float d = random(i + vec2(1.0, 1.0));
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}
+
+float fbm(vec2 st) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    for (int i = 0; i < 5; i++) {
+        value += amplitude * noise(st);
+        st *= 2.0;
+        amplitude *= 0.5;
+    }
+    return value;
+}
+
+void main() {
+    float time = u_time;
+    vec2 uv = (gl_FragCoord.xy * 2.0 - u_resolution.xy) / min(u_resolution.x, u_resolution.y);
+    vec2 uv0 = uv;
+    vec2 m = u_mouse;
+    float audio = u_audio;
+
+    vec3 finalColor = vec3(0.0);
+
+    float genre = clamp(u_genre, 0.0, 1.0);
+
+    // ===== KICK SHOCKWAVE =====
+    if (u_doomMode > 0.5 && u_kick > 0.05) {
+        float kickRing = (1.0 - u_kick) * 3.0;
+        float wave = smoothstep(0.15, 0.0, abs(length(uv) - kickRing));
+        wave *= u_kick;
+        vec2 dir = normalize(uv + 0.001);
+        uv += dir * wave * 0.12 * u_kick;
+        float tremor = u_kick * 0.012 * (1.0 - genre * 0.6);
+        uv.x += sin(uv.y * 30.0 + time * 50.0) * tremor;
+        uv.y += cos(uv.x * 25.0 + time * 40.0) * tremor;
     }
 
-    vec3 palette(float t) {
-        vec3 a = vec3(0.5, 0.5, 0.5);
-        vec3 b = vec3(0.5, 0.5, 0.5);
-        vec3 c = vec3(1.0, 1.0, 1.0);
-        vec3 d = vec3(0.263, 0.416, 0.557);
-        return a + b * cos(6.28318 * (c * t + d));
+    // ===== BASS BREATHING =====
+    if (u_doomMode > 0.5) {
+        float breath = u_bass * 0.18 * (1.0 - genre * 0.4) + u_kick * 0.08;
+        uv *= 1.0 - breath;
+
+        float smokeScale = 2.5 + u_riffPhase * 2.0 + genre * 1.5;
+        float smokeAmt = 0.06 * u_bass + 0.02 + u_kick * 0.03;
+        float sx = fbm(uv * smokeScale + time * 0.25) * smokeAmt;
+        float sy = fbm(uv * smokeScale + time * 0.25 + 50.0) * smokeAmt;
+        uv += vec2(sx, sy);
     }
 
-    // Doom palette - deep purples, burnt orange, blood red, void black
-    vec3 doomPalette(float t, float bass) {
-        vec3 a = vec3(0.15, 0.02, 0.08);
-        vec3 b = vec3(0.55, 0.15, 0.3);
-        vec3 c = vec3(0.8, 0.5, 0.3);
-        vec3 d = vec3(0.0, 0.1, 0.2);
-        vec3 base = a + b * cos(6.28318 * (c * t + d));
-        base += vec3(0.5, 0.15, 0.0) * bass;
-        return base;
+    // ===== SPACE NEBULA WARP (genre > 0.3) =====
+    if (u_doomMode > 0.5 && genre > 0.3) {
+        float spaceWarp = genre * 0.08;
+        float nebula = fbm(uv * 1.5 + time * 0.08);
+        float nebula2 = fbm(uv * 2.5 - time * 0.05 + 30.0);
+        uv += vec2(nebula, nebula2) * spaceWarp * (0.5 + u_high * 0.5);
     }
 
-    float random(vec2 st) {
-        return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
-    }
+    if (u_mode > 2.5) {
+        // ===== MODE 3: SPACE VOID TRAVEL =====
+        for (float i = 1.0; i < 6.0; i++) {
+            float depth = fract(i * 0.2 + time * 0.1 + m.y * 0.5);
+            float scale = mix(20.0, 0.5, depth);
+            float fade = smoothstep(0.0, 0.3, depth) * smoothstep(1.0, 0.8, depth);
 
-    float noise(vec2 p) {
-        vec2 i = floor(p);
-        vec2 f = fract(p);
-        f = f * f * (3.0 - 2.0 * f);
-        float a = random(i);
-        float b = random(i + vec2(1.0, 0.0));
-        float c = random(i + vec2(0.0, 1.0));
-        float d = random(i + vec2(1.0, 1.0));
-        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-    }
+            vec2 starUV = uv * scale + i * 453.2;
+            vec2 id = floor(starUV);
+            vec2 gv = fract(starUV) - 0.5;
 
-    float fbm(vec2 p) {
-        float v = 0.0;
-        float a = 0.5;
-        for (int i = 0; i < 5; i++) {
-            v += a * noise(p);
-            p *= 2.0;
-            a *= 0.5;
-        }
-        return v;
-    }
+            float r = random(id);
+            if (r > 0.95) {
+                float starSize = sin(time * 5.0 + r * 10.0) * 0.1 + audio;
+                if (u_doomMode > 0.5) starSize += u_bass * 0.2 + u_kick * 0.3 + u_high * genre * 0.3;
+                float star = 0.05 / length(gv);
+                star *= starSize * fade;
 
-    void main() {
-        vec2 uv = (gl_FragCoord.xy * 2.0 - u_resolution.xy) / u_resolution.y;
-        vec2 uv0 = uv;
-        vec3 finalColor = vec3(0.0);
-
-        vec2 m = u_mouse * 2.0 - 1.0;
-
-        float speed = 0.2;
-        if (u_hyper > 0.5) speed = 2.0;
-
-        if (u_doomMode > 0.5) {
-            speed = 0.08 + u_bass * 0.06;
-        }
-
-        float time = u_time * speed;
-        float audio = u_audio * 0.1;
-
-        // ===== MAMMOTH STOMP - KICK SHOCKWAVE =====
-        if (u_doomMode > 0.5 && u_kick > 0.01) {
-            // Radial shockwave from center - earth cracking underfoot
-            float dist = length(uv);
-            float waveRadius = (1.0 - u_kick) * 2.5;
-            float waveWidth = 0.15 + u_kick * 0.2;
-            float wave = smoothstep(waveWidth, 0.0, abs(dist - waveRadius));
-            wave *= u_kick;
-
-            // Displacement: push UVs outward from the stomp
-            vec2 dir = normalize(uv + 0.001);
-            uv += dir * wave * 0.12 * u_kick;
-
-            // Ground tremor - shake everything
-            float tremor = u_kick * 0.015;
-            uv.x += sin(uv.y * 30.0 + time * 50.0) * tremor;
-            uv.y += cos(uv.x * 25.0 + time * 40.0) * tremor;
-        }
-
-        // ===== DOOM BASS BREATHING =====
-        if (u_doomMode > 0.5) {
-            float breath = u_bass * 0.22 + u_kick * 0.1;
-            uv *= 1.0 - breath;
-
-            // Heavier sludge/smoke displacement
-            float smokeScale = 2.5 + u_riffPhase * 2.0;
-            float smokeAmt = 0.08 * u_bass + 0.03 + u_kick * 0.04;
-            float sx = fbm(uv * smokeScale + time * 0.25) * smokeAmt;
-            float sy = fbm(uv * smokeScale + time * 0.25 + 50.0) * smokeAmt;
-            uv += vec2(sx, sy);
-        }
-
-        if (u_mode > 2.5) {
-            // ===== MODE 3: SPACE VOID TRAVEL =====
-            for (float i = 1.0; i < 6.0; i++) {
-                float depth = fract(i * 0.2 + time * 0.1 + m.y * 0.5);
-                float scale = mix(20.0, 0.5, depth);
-                float fade = smoothstep(0.0, 0.3, depth) * smoothstep(1.0, 0.8, depth);
-
-                vec2 starUV = uv * scale + i * 453.2;
-                vec2 id = floor(starUV);
-                vec2 gv = fract(starUV) - 0.5;
-
-                float r = random(id);
-                if (r > 0.95) {
-                    float starSize = sin(time * 5.0 + r * 10.0) * 0.1 + audio;
-                    if (u_doomMode > 0.5) starSize += u_bass * 0.3 + u_kick * 0.5;
-                    float star = 0.05 / length(gv);
-                    star *= starSize * fade;
-
-                    vec3 starCol = (u_doomMode > 0.5) ?
-                        doomPalette(r + i * 0.2 + time * 0.1, u_bass) :
-                        palette(r + i * 0.2 + time * 0.1);
-                    finalColor += starCol * star;
+                vec3 starCol;
+                if (u_doomMode > 0.5) {
+                    starCol = mix(
+                        doomPalette(r + i * 0.2 + time * 0.1, u_bass),
+                        spacePalette(r + i * 0.2 + time * 0.08, u_high),
+                        genre
+                    );
+                } else {
+                    starCol = palette(r + i * 0.2 + time * 0.1);
                 }
+                finalColor += starCol * star;
+            }
 
-                if (r > 0.985) {
-                    float type = fract(r * 123.45);
-                    if (type > 0.5) {
-                        float size = 0.2 + fract(r * 10.0) * 0.2;
-                        float planetDist = length(gv) - size;
-                        float planet = 0.015 / abs(planetDist);
-                        if (type > 0.85) {
-                            float ringDist = abs(length(gv * vec2(1.0, 2.0)) - (size + 0.2));
-                            planet += 0.01 / abs(ringDist);
-                        }
-                        planet += smoothstep(size, size + 0.1, length(gv)) * 0.1;
-
-                        vec3 pCol;
-                        if (u_doomMode > 0.5) {
-                            if (type > 0.9) pCol = vec3(0.5, 0.0, 0.3);
-                            else if (type > 0.8) pCol = vec3(0.9, 0.3, 0.0);
-                            else if (type > 0.7) pCol = vec3(0.7, 0.0, 0.0);
-                            else pCol = vec3(0.3, 0.0, 0.25);
-                        } else {
-                            if (type > 0.9) pCol = vec3(0.2, 0.5, 1.0);
-                            else if (type > 0.8) pCol = vec3(1.0, 0.6, 0.2);
-                            else if (type > 0.7) pCol = vec3(0.9, 0.2, 0.2);
-                            else pCol = vec3(0.4, 0.8, 0.4);
-                        }
-
-                        float shadow = smoothstep(-size, size, gv.x + gv.y);
-                        finalColor += pCol * planet * fade * (1.0 + audio + u_bass) * shadow;
-                    } else {
-                        float angle = atan(gv.y, gv.x);
-                        float radius = length(gv);
-                        float def = sin(angle * 5.0 + time) * 0.05;
-                        float astDist = radius - (0.15 + def);
-                        float ast = 0.02 / abs(astDist);
-                        vec3 aCol = (u_doomMode > 0.5) ? vec3(0.5, 0.2, 0.1) : vec3(0.6, 0.5, 0.4);
-                        finalColor += aCol * ast * fade * (0.8 + audio * 2.0);
+            if (r > 0.985) {
+                float type = fract(r * 123.45);
+                if (type > 0.5) {
+                    float size = 0.2 + fract(r * 10.0) * 0.2;
+                    float planetDist = length(gv) - size;
+                    float planet = 0.015 / abs(planetDist);
+                    if (type > 0.85) {
+                        float ringDist = abs(length(gv * vec2(1.0, 2.0)) - (size + 0.2));
+                        planet += 0.01 / abs(ringDist);
                     }
-                }
-            }
-        } else {
-            // ===== MODES 0-2: FRACTAL INFINITY =====
-            for (float i = 0.0; i < 4.0; i++) {
-                float doomFold = 0.0;
-                if (u_doomMode > 0.5) {
-                    doomFold = sin(u_riffPhase * 6.28318 + i * 1.5) * 0.12 * (0.5 + u_bass);
-                    // Kick makes geometry crunch inward
-                    doomFold += u_kick * 0.15;
-                }
+                    planet += smoothstep(size, size + 0.1, length(gv)) * 0.1;
 
-                if (u_mode < 0.5) {
-                    uv = fract(uv * (1.5 + doomFold)) - 0.5;
-                    float rotSpd = (u_doomMode > 0.5) ? 0.06 + u_bass * 0.3 + u_kick * 0.4 : 0.2;
-                    uv *= rot(time * rotSpd + i * 0.5 + audio);
-                } else if (u_mode < 1.5) {
-                    uv = fract(uv * (1.2 + doomFold)) - 0.5;
-                    uv = abs(uv);
-                    float rotSpd = (u_doomMode > 0.5) ? 0.12 + u_bass * 0.4 + u_kick * 0.5 : 0.4;
-                    uv *= rot(time * rotSpd + i);
+                    vec3 pCol;
+                    if (u_doomMode > 0.5) {
+                        pCol = mix(
+                            vec3(0.6, 0.15, 0.05),
+                            vec3(0.15, 0.1, 0.5),
+                            genre
+                        );
+                    } else {
+                        if (type > 0.9) pCol = vec3(0.2, 0.5, 1.0);
+                        else if (type > 0.8) pCol = vec3(1.0, 0.6, 0.2);
+                        else if (type > 0.7) pCol = vec3(0.9, 0.2, 0.2);
+                        else pCol = vec3(0.4, 0.8, 0.4);
+                    }
+
+                    float shadow = smoothstep(-size, size, gv.x + gv.y);
+                    finalColor += pCol * planet * fade * (1.0 + audio + u_bass) * shadow;
                 } else {
-                    float waveAmt = (u_doomMode > 0.5) ? 0.3 + u_bass * 0.25 + u_kick * 0.15 : 0.2;
-                    uv = fract(uv * (1.5 + sin(time) * waveAmt + doomFold)) - 0.5;
-                    float rotSpd = (u_doomMode > 0.5) ? 0.03 + u_mid * 0.12 : 0.1;
-                    uv *= rot(time * rotSpd);
-                    float warpStr = (u_doomMode > 0.5) ? 0.1 + u_bass * 0.18 + u_kick * 0.12 : 0.1;
-                    uv += sin(uv.yx * (4.0 + u_bass * 5.0) + time) * warpStr;
+                    float angle = atan(gv.y, gv.x);
+                    float radius = length(gv);
+                    float def = sin(angle * 5.0 + time) * 0.05;
+                    float astDist = radius - (0.15 + def);
+                    float ast = 0.02 / abs(astDist);
+                    vec3 aCol = (u_doomMode > 0.5) ?
+                        mix(vec3(0.5, 0.2, 0.1), vec3(0.2, 0.15, 0.4), genre) :
+                        vec3(0.6, 0.5, 0.4);
+                    finalColor += aCol * ast * fade * (0.8 + audio * 2.0);
                 }
-
-                float d = length(uv) * exp(-length(uv0));
-
-                vec3 col;
-                if (u_doomMode > 0.5) {
-                    float doomT = length(uv0) + i * 0.4 + time * 0.15 + u_noteFreq * 3.0 + u_riffPhase * 0.5;
-                    col = doomPalette(doomT, u_bass);
-                    // Note onset flash
-                    col += vec3(0.4, 0.15, 0.02) * u_noteOn * (1.0 + u_bass);
-                    // Riff change flash
-                    col += vec3(0.3, 0.1, 0.05) * u_riffFlash;
-                    // KICK FLASH - mammoth stomp fire
-                    col += vec3(0.6, 0.2, 0.0) * u_kick * u_kick;
-                    // SNARE CRACK - brief white flash
-                    col += vec3(0.3, 0.25, 0.2) * u_snare;
-                } else {
-                    col = palette(length(uv0) + i * 0.4 + time * 0.4 + m.x * 2.0 + audio);
-                }
-
-                if (u_hyper > 0.5) col = 1.0 - col;
-
-                if (u_mode < 0.5) {
-                    float audioMod = (u_doomMode > 0.5) ? u_bass * 18.0 + u_kick * 8.0 : audio * 10.0;
-                    d = sin(d * (8.0 + m.y * 10.0 + audioMod) + time) / 8.0;
-                } else if (u_mode < 1.5) {
-                    float sharpness = (u_doomMode > 0.5) ? 10.0 + u_mid * 6.0 + u_kick * 4.0 : 12.0;
-                    d = sin(d * sharpness + time) / 8.0;
-                    d = smoothstep(0.0, 0.1, d);
-                } else {
-                    float softness = (u_doomMode > 0.5) ? 5.0 + u_bass * 3.0 + u_kick * 2.0 : 6.0;
-                    d = sin(d * softness + time + m.y * 5.0) / 6.0;
-                }
-
-                d = abs(d);
-
-                float glowPower = (u_hyper > 0.5) ? 1.5 : 1.2;
-                if (u_doomMode > 0.5) {
-                    glowPower = 1.0 + u_bass * 0.5 + u_noteOn * 0.2 + u_kick * 0.4;
-                }
-                d = pow(0.01 / d, glowPower);
-
-                finalColor += col * d;
             }
         }
 
-        // ===== MAMMOTH STOMP AFTERGLOW =====
-        if (u_doomMode > 0.5 && u_kick > 0.01) {
-            float dist = length(uv0);
-            float waveR = (1.0 - u_kick) * 2.2;
-            float ring = smoothstep(0.12, 0.0, abs(dist - waveR)) * u_kick;
-            // Fiery ring expanding outward
-            vec3 stompColor = mix(vec3(0.8, 0.3, 0.0), vec3(0.4, 0.0, 0.0), dist);
-            finalColor += stompColor * ring * 1.5;
-
-            // Central impact glow
-            float centralGlow = exp(-dist * 3.0) * u_kick * u_kick;
-            finalColor += vec3(0.5, 0.15, 0.0) * centralGlow;
+        // ===== NEBULA LAYER for space rock =====
+        if (u_doomMode > 0.5 && genre > 0.4) {
+            float nebDensity = fbm(uv0 * 1.2 + time * 0.03);
+            float nebDensity2 = fbm(uv0 * 2.8 - time * 0.02 + 77.0);
+            float neb = nebDensity * nebDensity2;
+            vec3 nebCol = spacePalette(nebDensity + time * 0.02, u_high);
+            finalColor += nebCol * neb * genre * 0.4 * (0.5 + u_mid * 0.5);
         }
-
-        // ===== DOOM VIGNETTE - THE VOID BREATHES =====
-        if (u_doomMode > 0.5) {
-            float vig = length(uv0) * 0.5;
-            vig = smoothstep(0.15, 1.4, vig);
-            float vigStrength = 0.5 + (1.0 - u_noteOn) * 0.3 - u_bass * 0.2 - u_kick * 0.15;
-            vigStrength = clamp(vigStrength, 0.08, 0.8);
-            finalColor *= 1.0 - vig * vigStrength;
-
-            // Heavier smoke overlay
-            float smokeOverlay = fbm(uv0 * 3.5 + time * 0.15);
-            float smokeOverlay2 = fbm(uv0 * 6.0 - time * 0.1 + 100.0);
-            float smoke = mix(smokeOverlay, smokeOverlay2, 0.5);
-            finalColor += vec3(0.08, 0.02, 0.0) * smoke * (u_bass * 0.6 + u_kick * 0.3);
-
-            // Dust particles kicked up by mammoth stomps
-            if (u_kick > 0.2) {
-                float dust = fbm(uv0 * 12.0 + time * 2.0) * u_kick * 0.15;
-                finalColor += vec3(0.3, 0.15, 0.05) * dust;
+    } else {
+        // ===== MODES 0-2: FRACTAL INFINITY =====
+        for (float i = 0.0; i < 4.0; i++) {
+            float doomFold = 0.0;
+            if (u_doomMode > 0.5) {
+                doomFold = sin(u_riffPhase * 6.28318 + i * 1.5) * 0.12 * (0.5 + u_bass);
+                doomFold += u_kick * 0.12 * (1.0 - genre * 0.5);
+                doomFold += sin(time * 0.3 + i * 0.8) * genre * 0.06;
             }
+
+            if (u_mode < 0.5) {
+                uv = fract(uv * (1.5 + doomFold)) - 0.5;
+                float rotSpd = (u_doomMode > 0.5) ?
+                    mix(0.06 + u_bass * 0.3, 0.15 + u_high * 0.15, genre) :
+                    0.2;
+                uv *= rot(time * rotSpd + i * 0.5 + audio);
+            } else if (u_mode < 1.5) {
+                uv = fract(uv * (1.2 + doomFold)) - 0.5;
+                uv = abs(uv);
+                float rotSpd = (u_doomMode > 0.5) ?
+                    mix(0.12 + u_bass * 0.4, 0.2 + u_mid * 0.2, genre) :
+                    0.4;
+                uv *= rot(time * rotSpd + i);
+            } else {
+                float waveAmt = (u_doomMode > 0.5) ?
+                    mix(0.3 + u_bass * 0.25, 0.15 + u_high * 0.12, genre) :
+                    0.2;
+                uv = fract(uv * (1.5 + sin(time) * waveAmt + doomFold)) - 0.5;
+                float rotSpd = (u_doomMode > 0.5) ? 0.03 + u_mid * 0.12 + genre * 0.08 : 0.1;
+                uv *= rot(time * rotSpd);
+                float warpStr = (u_doomMode > 0.5) ?
+                    mix(0.1 + u_bass * 0.18, 0.06 + u_high * 0.1, genre) :
+                    0.1;
+                uv += sin(uv.yx * (4.0 + u_bass * 5.0) + time) * warpStr;
+            }
+
+            float d = length(uv) * exp(-length(uv0));
+
+            vec3 col;
+            if (u_doomMode > 0.5) {
+                float doomT = length(uv0) + i * 0.4 + time * 0.15 + u_noteFreq * 3.0 + u_riffPhase * 0.5;
+                vec3 dCol = doomPalette(doomT, u_bass);
+                vec3 sCol = spacePalette(doomT + time * 0.05, u_high);
+                col = mix(dCol, sCol, genre);
+
+                vec3 flashCol = mix(vec3(0.4, 0.15, 0.02), vec3(0.1, 0.15, 0.35), genre);
+                col += flashCol * u_noteOn * (1.0 + u_bass);
+                vec3 riffFlashCol = mix(vec3(0.3, 0.1, 0.05), vec3(0.1, 0.05, 0.3), genre);
+                col += riffFlashCol * u_riffFlash;
+                vec3 kickCol = mix(vec3(0.6, 0.2, 0.0), vec3(0.2, 0.1, 0.4), genre);
+                col += kickCol * u_kick * u_kick;
+                vec3 snareCol = mix(vec3(0.3, 0.25, 0.2), vec3(0.2, 0.2, 0.35), genre);
+                col += snareCol * u_snare;
+            } else {
+                col = palette(length(uv0) + i * 0.4 + time * 0.4 + m.x * 2.0 + audio);
+            }
+
+            if (u_hyper > 0.5) col = 1.0 - col;
+
+            if (u_mode < 0.5) {
+                float audioMod = (u_doomMode > 0.5) ? u_bass * 18.0 + u_kick * 6.0 : audio * 10.0;
+                d = sin(d * (8.0 + m.y * 10.0 + audioMod) + time) / 8.0;
+            } else if (u_mode < 1.5) {
+                float sharpness = (u_doomMode > 0.5) ?
+                    mix(10.0 + u_mid * 6.0, 8.0 + u_high * 4.0, genre) :
+                    12.0;
+                d = sin(d * sharpness + time) / 8.0;
+                d = smoothstep(0.0, 0.1, d);
+            } else {
+                float softness = (u_doomMode > 0.5) ?
+                    mix(5.0 + u_bass * 3.0, 4.0 + u_mid * 2.0, genre) :
+                    6.0;
+                d = sin(d * softness + time + m.y * 5.0) / 6.0;
+            }
+
+            d = abs(d);
+
+            float glowPower = (u_hyper > 0.5) ? 1.5 : 1.2;
+            if (u_doomMode > 0.5) {
+                glowPower = mix(
+                    1.0 + u_bass * 0.5 + u_noteOn * 0.2 + u_kick * 0.4,
+                    1.1 + u_high * 0.3 + u_noteOn * 0.15,
+                    genre
+                );
+            }
+            d = pow(0.01 / d, glowPower);
+
+            finalColor += col * d;
         }
-
-        // Webcam
-        if (u_webcamEnabled > 0.5) {
-            vec2 webcamUV = uv0 * 0.5 + 0.5;
-            webcamUV += finalColor.xy * 0.1 * (1.0 + audio * 5.0);
-            vec3 webcamColor = texture2D(u_webcam, webcamUV).rgb;
-            finalColor = mix(webcamColor, finalColor, 0.5);
-        }
-
-        // ===== FEEDBACK LOOP (THE SLUDGE TRAIL) =====
-        vec2 feedbackUV = vUv;
-        feedbackUV -= 0.5;
-
-        float fbZoom = 0.99;
-        float fbAngle = 0.005 * sin(time);
-
-        if (u_doomMode > 0.5) {
-            fbZoom = 0.993 - u_bass * 0.014 - u_kick * 0.008;
-            fbAngle = 0.003 * sin(time * 0.3) + u_bass * 0.006 + u_kick * 0.012;
-        }
-
-        feedbackUV *= fbZoom;
-        float s = sin(fbAngle);
-        float c = cos(fbAngle);
-        feedbackUV = vec2(feedbackUV.x * c - feedbackUV.y * s, feedbackUV.x * s + feedbackUV.y * c);
-        feedbackUV += 0.5;
-
-        vec3 prevColor = texture2D(u_prevFrame, feedbackUV).rgb;
-
-        float decay = (u_hyper > 0.5) ? 0.8 : 0.96;
-        if (u_doomMode > 0.5) {
-            // Heavier sludge trails, kicks leave longer afterimages
-            decay = 0.88 + u_bass * 0.06 + u_kick * 0.04;
-        }
-
-        finalColor = mix(finalColor, prevColor, decay);
-
-        gl_FragColor = vec4(finalColor, 1.0);
     }
+
+    // ===== STOMP AFTERGLOW =====
+    if (u_doomMode > 0.5 && u_kick > 0.01) {
+        float dist = length(uv0);
+        float waveR = (1.0 - u_kick) * 2.2;
+        float ring = smoothstep(0.12, 0.0, abs(dist - waveR)) * u_kick;
+        vec3 stompColor = mix(
+            mix(vec3(0.8, 0.3, 0.0), vec3(0.4, 0.0, 0.0), dist),
+            mix(vec3(0.3, 0.1, 0.6), vec3(0.1, 0.0, 0.3), dist),
+            genre
+        );
+        finalColor += stompColor * ring * 1.2;
+
+        float centralGlow = exp(-dist * 3.0) * u_kick * u_kick;
+        vec3 glowCol = mix(vec3(0.5, 0.15, 0.0), vec3(0.15, 0.08, 0.4), genre);
+        finalColor += glowCol * centralGlow;
+    }
+
+    // ===== VIGNETTE =====
+    if (u_doomMode > 0.5) {
+        float vig = length(uv0) * 0.5;
+        vig = smoothstep(0.15, 1.4, vig);
+        float vigStrength = mix(
+            0.5 + (1.0 - u_noteOn) * 0.3 - u_bass * 0.2,
+            0.35 + (1.0 - u_noteOn) * 0.2 - u_high * 0.15,
+            genre
+        );
+        vigStrength = clamp(vigStrength, 0.08, 0.75);
+        finalColor *= 1.0 - vig * vigStrength;
+
+        float smokeOverlay = fbm(uv0 * 3.5 + time * 0.15);
+        float smokeOverlay2 = fbm(uv0 * 6.0 - time * 0.1 + 100.0);
+        float smoke = mix(smokeOverlay, smokeOverlay2, 0.5);
+        vec3 smokeCol = mix(
+            vec3(0.08, 0.02, 0.0),
+            vec3(0.02, 0.02, 0.1),
+            genre
+        );
+        finalColor += smokeCol * smoke * (u_bass * 0.5 + u_kick * 0.2 + genre * 0.15);
+
+        if (u_kick > 0.15) {
+            float dust = fbm(uv0 * 12.0 + time * 2.0) * u_kick * 0.12;
+            vec3 dustCol = mix(vec3(0.3, 0.15, 0.05), vec3(0.1, 0.08, 0.25), genre);
+            finalColor += dustCol * dust;
+        }
+
+        // Space rock: aurora streaks
+        if (genre > 0.5) {
+            float aurora = sin(uv0.x * 3.0 + time * 0.2 + fbm(uv0 * 2.0 + time * 0.1) * 3.0);
+            aurora = smoothstep(0.7, 1.0, aurora) * (genre - 0.5) * 2.0;
+            vec3 auroraCol = spacePalette(uv0.y + time * 0.05, u_high);
+            finalColor += auroraCol * aurora * 0.15 * (0.5 + u_mid);
+        }
+    }
+
+    // Webcam
+    if (u_webcamEnabled > 0.5) {
+        vec2 webcamUV = uv0 * 0.5 + 0.5;
+        webcamUV += finalColor.xy * 0.1 * (1.0 + audio * 5.0);
+        vec3 webcamColor = texture2D(u_webcam, webcamUV).rgb;
+        finalColor = mix(webcamColor, finalColor, 0.5);
+    }
+
+    // ===== FEEDBACK LOOP =====
+    vec2 feedbackUV = vUv;
+    feedbackUV -= 0.5;
+
+    float fbZoom = 0.99;
+    float fbAngle = 0.005 * sin(time);
+
+    if (u_doomMode > 0.5) {
+        fbZoom = mix(
+            0.993 - u_bass * 0.012 - u_kick * 0.006,
+            0.996 - u_high * 0.005,
+            genre
+        );
+        fbAngle = mix(
+            0.003 * sin(time * 0.3) + u_bass * 0.005 + u_kick * 0.01,
+            0.006 * sin(time * 0.15) + u_mid * 0.003,
+            genre
+        );
+    }
+
+    feedbackUV *= fbZoom;
+    float s = sin(fbAngle);
+    float c = cos(fbAngle);
+    feedbackUV = vec2(feedbackUV.x * c - feedbackUV.y * s, feedbackUV.x * s + feedbackUV.y * c);
+    feedbackUV += 0.5;
+
+    vec3 prevColor = texture2D(u_prevFrame, feedbackUV).rgb;
+
+    float decay = (u_hyper > 0.5) ? 0.8 : 0.96;
+    if (u_doomMode > 0.5) {
+        decay = mix(
+            0.88 + u_bass * 0.05 + u_kick * 0.03,
+            0.92 + u_high * 0.03,
+            genre
+        );
+    }
+
+    finalColor = mix(finalColor, prevColor, decay);
+
+    gl_FragColor = vec4(finalColor, 1.0);
+}
 `;
+
 
 // ===== SHADER COMPILATION =====
 function initShaderProgram(gl, vsSource, fsSource) {
     const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
     const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
-
     const shaderProgram = gl.createProgram();
     gl.attachShader(shaderProgram, vertexShader);
     gl.attachShader(shaderProgram, fragmentShader);
     gl.linkProgram(shaderProgram);
-
     if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
-        console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(shaderProgram));
+        console.error('Shader link error: ' + gl.getProgramInfoLog(shaderProgram));
         return null;
     }
     return shaderProgram;
@@ -372,9 +445,8 @@ function loadShader(gl, type, source) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
-
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-        console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
+        console.error('Shader compile error: ' + gl.getShaderInfoLog(shader));
         gl.deleteShader(shader);
         return null;
     }
@@ -408,27 +480,27 @@ const programInfo = {
         riffFlash: gl.getUniformLocation(shaderProgram, 'u_riffFlash'),
         kick: gl.getUniformLocation(shaderProgram, 'u_kick'),
         snare: gl.getUniformLocation(shaderProgram, 'u_snare'),
+        genre: gl.getUniformLocation(shaderProgram, 'u_genre'),
     },
 };
 
 // ===== BUFFERS =====
 const positionBuffer = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-const positions = [-1.0, 1.0, 1.0, 1.0, -1.0, -1.0, 1.0, -1.0];
-gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, 1, 1, 1, -1, -1, 1, -1]), gl.STATIC_DRAW);
 
-// ===== FRAMEBUFFERS FOR FEEDBACK LOOP =====
+// ===== FRAMEBUFFERS =====
 let canvasWidth = gl.canvas.width;
 let canvasHeight = gl.canvas.height;
 
-function createTexture(width, height) {
-    const targetTexture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, targetTexture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+function createTexture(w, h) {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    return targetTexture;
+    return t;
 }
 
 function createFramebuffer(texture) {
@@ -454,13 +526,12 @@ function resizeFramebuffers() {
     }
 }
 
-// ===== AUDIO CONTEXT =====
+// ===== AUDIO =====
 let audioContext;
 let audioAnalyser;
 let audioDataArray;
 let hasMicStarted = false;
 
-let webcamStream = null;
 let webcamVideo = document.createElement('video');
 webcamVideo.autoplay = true;
 webcamVideo.muted = true;
@@ -487,18 +558,14 @@ function ensureAudioContext() {
 function initMic() {
     if (hasMicStarted) return;
     ensureAudioContext();
-
     navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-        .then(function (stream) {
+        .then(stream => {
             const source = audioContext.createMediaStreamSource(stream);
             source.connect(audioAnalyser);
             hasMicStarted = true;
             document.body.classList.add('active');
-            console.log("🎤 Mic enabled!");
         })
-        .catch(function (err) {
-            console.error('Error accessing microphone:', err);
-        });
+        .catch(err => console.error('Mic error:', err));
 }
 
 function initWebcam() {
@@ -508,703 +575,221 @@ function initWebcam() {
             webcamVideo.play();
             hasWebcamStarted = true;
             isWebcam = 1.0;
-            console.log("📷 Webcam ON");
         })
-        .catch(err => {
-            console.error(err);
-            alert("Webcam error! Check permissions.");
+        .catch(err => { console.error(err); alert("Webcam error!"); });
+}
+
+// =====================================================
+// ===== REALISTIC GUITAR AMP MODEL ==================
+// =====================================================
+
+class RealisticGuitar {
+    constructor(ctx, dest) {
+        this.ctx = ctx;
+        this.inputGain = ctx.createGain();
+        this.inputGain.gain.value = 0.6;
+
+        // Preamp tube saturation
+        this.preampDrive = ctx.createWaveShaper();
+        this.preampDrive.curve = this._tubeSaturation(6.0);
+        this.preampDrive.oversample = '4x';
+
+        this.preampDrive2 = ctx.createWaveShaper();
+        this.preampDrive2.curve = this._tubeSaturation(3.0);
+        this.preampDrive2.oversample = '4x';
+
+        // Tone stack EQ
+        this.tsBass = ctx.createBiquadFilter();
+        this.tsBass.type = 'lowshelf';
+        this.tsBass.frequency.value = 250;
+        this.tsBass.gain.value = 3;
+
+        this.tsMid = ctx.createBiquadFilter();
+        this.tsMid.type = 'peaking';
+        this.tsMid.frequency.value = 800;
+        this.tsMid.Q.value = 1.2;
+        this.tsMid.gain.value = -2;
+
+        this.tsTreble = ctx.createBiquadFilter();
+        this.tsTreble.type = 'highshelf';
+        this.tsTreble.frequency.value = 3500;
+        this.tsTreble.gain.value = -6;
+
+        this.presence = ctx.createBiquadFilter();
+        this.presence.type = 'peaking';
+        this.presence.frequency.value = 2200;
+        this.presence.Q.value = 2.0;
+        this.presence.gain.value = 2;
+
+        // Cabinet simulation
+        this.cabLP = ctx.createBiquadFilter();
+        this.cabLP.type = 'lowpass';
+        this.cabLP.frequency.value = 4500;
+        this.cabLP.Q.value = 0.7;
+
+        this.cabHP = ctx.createBiquadFilter();
+        this.cabHP.type = 'highpass';
+        this.cabHP.frequency.value = 70;
+        this.cabHP.Q.value = 0.7;
+
+        this.cabResonance = ctx.createBiquadFilter();
+        this.cabResonance.type = 'peaking';
+        this.cabResonance.frequency.value = 2800;
+        this.cabResonance.Q.value = 3.0;
+        this.cabResonance.gain.value = 4;
+
+        this.cabBody = ctx.createBiquadFilter();
+        this.cabBody.type = 'peaking';
+        this.cabBody.frequency.value = 400;
+        this.cabBody.Q.value = 1.5;
+        this.cabBody.gain.value = 3;
+
+        // Power amp compression
+        this.powerComp = ctx.createDynamicsCompressor();
+        this.powerComp.threshold.value = -18;
+        this.powerComp.knee.value = 10;
+        this.powerComp.ratio.value = 4;
+        this.powerComp.attack.value = 0.005;
+        this.powerComp.release.value = 0.1;
+
+        // Spring reverb (multi-tap delay)
+        this.reverbDelay1 = ctx.createDelay(0.2);
+        this.reverbDelay1.delayTime.value = 0.037;
+        this.reverbDelay2 = ctx.createDelay(0.2);
+        this.reverbDelay2.delayTime.value = 0.053;
+        this.reverbDelay3 = ctx.createDelay(0.2);
+        this.reverbDelay3.delayTime.value = 0.071;
+        this.reverbFB1 = ctx.createGain(); this.reverbFB1.gain.value = 0.35;
+        this.reverbFB2 = ctx.createGain(); this.reverbFB2.gain.value = 0.3;
+        this.reverbFB3 = ctx.createGain(); this.reverbFB3.gain.value = 0.25;
+        this.reverbLP = ctx.createBiquadFilter();
+        this.reverbLP.type = 'lowpass';
+        this.reverbLP.frequency.value = 3000;
+        this.reverbWet = ctx.createGain();
+        this.reverbWet.gain.value = 0.12;
+
+        // Slapback delay
+        this.delay = ctx.createDelay(2.0);
+        this.delay.delayTime.value = 0.42;
+        this.delayFB = ctx.createGain();
+        this.delayFB.gain.value = 0.2;
+        this.delayLP = ctx.createBiquadFilter();
+        this.delayLP.type = 'lowpass';
+        this.delayLP.frequency.value = 2500;
+        this.delayWet = ctx.createGain();
+        this.delayWet.gain.value = 0.08;
+
+        this.masterGain = ctx.createGain();
+        this.masterGain.gain.value = 0.22;
+
+        // Wire the chain
+        this.inputGain.connect(this.preampDrive);
+        this.preampDrive.connect(this.preampDrive2);
+        this.preampDrive2.connect(this.tsBass);
+        this.tsBass.connect(this.tsMid);
+        this.tsMid.connect(this.tsTreble);
+        this.tsTreble.connect(this.presence);
+        this.presence.connect(this.cabHP);
+        this.cabHP.connect(this.cabLP);
+        this.cabLP.connect(this.cabResonance);
+        this.cabResonance.connect(this.cabBody);
+        this.cabBody.connect(this.powerComp);
+        this.powerComp.connect(this.masterGain);
+
+        // Spring reverb
+        [this.reverbDelay1, this.reverbDelay2, this.reverbDelay3].forEach((d, i) => {
+            this.powerComp.connect(d);
+            const fb = [this.reverbFB1, this.reverbFB2, this.reverbFB3][i];
+            d.connect(fb); fb.connect(d);
+            d.connect(this.reverbLP);
         });
-}
-
-// =====================================================
-// ===== DROP D STONER DOOM SYNTH ENGINE =============
-// =====================================================
-
-// Drop D tuning note frequencies (Hz)
-const N = {
-    D1: 36.71, A1: 55.00, D2: 73.42, Eb2: 77.78, E2: 82.41,
-    F2: 87.31, Gb2: 92.50, G2: 98.00, Ab2: 103.83, A2: 110.00,
-    Bb2: 116.54, B2: 123.47, C3: 130.81, Db3: 138.59, D3: 146.83,
-    E3: 164.81, F3: 174.61, G3: 196.00,
-};
-
-// Drum hit types: K=kick, S=snare, H=hihat, C=crash, O=open hat, 0=rest
-// Drum patterns are arrays of hits per 16th note grid, same length as note pattern total dur
-
-// ===== RIFF LIBRARY - MAMMOTH DOOM =====
-const RIFFS = [
-    {
-        name: "MAMMOTH MARCH",
-        bpm: 42,
-        repeats: 3,
-        visualMode: 2,
-        pattern: [
-            { freq: N.D2, dur: 8 },
-            { freq: 0, dur: 4 },
-            { freq: N.D2, dur: 4, pm: true },
-            { freq: N.D2, dur: 8 },
-            { freq: 0, dur: 4 },
-            { freq: N.F2, dur: 4 },
-            { freq: N.Eb2, dur: 8 },
-            { freq: N.D2, dur: 8 },
-            { freq: 0, dur: 4 },
-            { freq: N.D2, dur: 4, pm: true },
-            { freq: N.D2, dur: 8 },
-        ],
-        // 64 16th notes
-        drums: "K00H00S0K00H00S0K00H00S0K0K0S0H0K00H00S0K00H00S0K00H00S0K0K0S000",
-    },
-    {
-        name: "TECTONIC CRAWL",
-        bpm: 38,
-        repeats: 2,
-        visualMode: 0,
-        pattern: [
-            { freq: N.D1, dur: 16 },
-            { freq: 0, dur: 4 },
-            { freq: N.D2, dur: 8 },
-            { freq: N.Eb2, dur: 4 },
-            { freq: N.D1, dur: 16 },
-            { freq: 0, dur: 4 },
-            { freq: N.G2, dur: 8 },
-            { freq: N.F2, dur: 4 },
-        ],
-        // 64 16th notes - sparse mammoth stomps
-        drums: "K000000000000000S000K000000H000K000000000000000S000K00000K0S0000",
-    },
-    {
-        name: "SABBATH WORSHIP",
-        bpm: 52,
-        repeats: 3,
-        visualMode: 0,
-        pattern: [
-            { freq: N.D2, dur: 6 },
-            { freq: 0, dur: 2 },
-            { freq: N.D2, dur: 2 },
-            { freq: N.Eb2, dur: 2 },
-            { freq: N.E2, dur: 2 },
-            { freq: N.F2, dur: 2 },
-            { freq: N.F2, dur: 6 },
-            { freq: 0, dur: 2 },
-            { freq: N.F2, dur: 2 },
-            { freq: N.E2, dur: 2 },
-            { freq: N.Eb2, dur: 2 },
-            { freq: N.D2, dur: 2 },
-        ],
-        // 32 16th notes
-        drums: "K00H00S0K0H0K0S0K00H00S0K0K0S0H0",
-    },
-    {
-        name: "DOPETHRONE",
-        bpm: 48,
-        repeats: 4,
-        visualMode: 1,
-        pattern: [
-            { freq: N.D2, dur: 4 },
-            { freq: N.D2, dur: 2, pm: true },
-            { freq: N.D2, dur: 2, pm: true },
-            { freq: 0, dur: 2 },
-            { freq: N.F2, dur: 4 },
-            { freq: N.G2, dur: 4 },
-            { freq: N.F2, dur: 4 },
-            { freq: N.D2, dur: 6 },
-            { freq: 0, dur: 4 },
-        ],
-        // 32 16th notes
-        drums: "K00HK0K000S0K00HK00H00S0K0K0S000",
-    },
-    {
-        name: "WIZARD'S BONG",
-        bpm: 44,
-        repeats: 2,
-        visualMode: 3,
-        pattern: [
-            { freq: N.D2, dur: 16 },
-            { freq: N.Bb2, dur: 8 },
-            { freq: N.A2, dur: 8 },
-            { freq: N.G2, dur: 8 },
-            { freq: N.F2, dur: 8 },
-            { freq: N.D2, dur: 16 },
-        ],
-        // 64 16th notes - huge slow cymbal swells
-        drums: "C000000000000000K000S000000H000K000000000000000K000S0000000K0S000",
-    },
-    {
-        name: "COSMIC SLUDGE",
-        bpm: 40,
-        repeats: 3,
-        visualMode: 2,
-        pattern: [
-            { freq: N.D2, dur: 8 },
-            { freq: 0, dur: 2 },
-            { freq: N.G2, dur: 8 },
-            { freq: 0, dur: 2 },
-            { freq: N.D2, dur: 6 },
-            { freq: N.F2, dur: 2 },
-            { freq: N.Bb2, dur: 6 },
-            { freq: N.A2, dur: 6 },
-            { freq: 0, dur: 4 },
-        ],
-        // 44 16th notes
-        drums: "K00H00S0H0K00H00S0H0K0S0H0K00H00S0K0K0S00000",
-    },
-    {
-        name: "IRON MONOLITH",
-        bpm: 56,
-        repeats: 4,
-        visualMode: 0,
-        pattern: [
-            { freq: N.D2, dur: 3, pm: true },
-            { freq: N.D2, dur: 3, pm: true },
-            { freq: 0, dur: 2 },
-            { freq: N.F2, dur: 4 },
-            { freq: N.G2, dur: 4 },
-            { freq: N.A2, dur: 4 },
-            { freq: N.G2, dur: 4 },
-            { freq: N.F2, dur: 4 },
-            { freq: N.D2, dur: 4 },
-        ],
-        // 32 16th notes
-        drums: "K0SK0S00K00H00S0K00H00S0K0K0S0H0",
-    },
-    {
-        name: "PRIMORDIAL OOZE",
-        bpm: 36,
-        repeats: 2,
-        visualMode: 2,
-        pattern: [
-            { freq: N.D1, dur: 12 },
-            { freq: N.D2, dur: 4 },
-            { freq: N.Eb2, dur: 8 },
-            { freq: N.D2, dur: 8 },
-            { freq: 0, dur: 4 },
-            { freq: N.D1, dur: 12 },
-            { freq: N.D2, dur: 4 },
-            { freq: N.G2, dur: 8 },
-            { freq: N.F2, dur: 4 },
-            { freq: N.D2, dur: 8 },
-        ],
-        // 72 16th notes - extremely slow, enormous
-        drums: "K00000000000K000K000S000K000000K0000000000000K000K000S000K00000K0K0000000",
-    },
-    {
-        name: "EARTHQUAKE RITUAL",
-        bpm: 46,
-        repeats: 3,
-        visualMode: 1,
-        pattern: [
-            { freq: N.D2, dur: 4 },
-            { freq: N.D2, dur: 4, pm: true },
-            { freq: N.D2, dur: 4 },
-            { freq: N.D2, dur: 4, pm: true },
-            { freq: N.Gb2, dur: 8 },
-            { freq: N.G2, dur: 4 },
-            { freq: N.F2, dur: 4 },
-            { freq: N.D2, dur: 4 },
-            { freq: N.D2, dur: 4, pm: true },
-            { freq: N.D2, dur: 4 },
-            { freq: N.D2, dur: 4, pm: true },
-            { freq: N.Ab2, dur: 4 },
-            { freq: N.G2, dur: 4 },
-            { freq: N.F2, dur: 4 },
-            { freq: N.Eb2, dur: 4 },
-        ],
-        // 64 16th notes - ritual stomps
-        drums: "K00SK00SK00SK00SK000000SK00SK00SK00SK00SK00SK00SK000S000K00SK0S0",
-    },
-    {
-        name: "LEVIATHAN DIRGE",
-        bpm: 34,
-        repeats: 2,
-        visualMode: 3,
-        pattern: [
-            { freq: N.D1, dur: 24 },
-            { freq: N.A1, dur: 16 },
-            { freq: N.D1, dur: 24 },
-        ],
-        // 64 16th notes - ultra sparse, ocean-depth slow
-        drums: "K00000000000000000000000S0000000K0000000000000000K000000000S00000",
-    },
-];
-
-// =====================================================
-// ===== DOOM DRUM MACHINE ============================
-// =====================================================
-
-class DoomDrums {
-    constructor(ctx, analyser) {
-        this.ctx = ctx;
-        this.analyser = analyser;
-
-        // Drum bus with its own processing chain
-        this.drumBus = this.ctx.createGain();
-        this.drumBus.gain.value = 0.55;
-
-        // Compressor to glue the drums together
-        this.compressor = this.ctx.createDynamicsCompressor();
-        this.compressor.threshold.value = -20;
-        this.compressor.knee.value = 12;
-        this.compressor.ratio.value = 6;
-        this.compressor.attack.value = 0.003;
-        this.compressor.release.value = 0.15;
-
-        // Drum room reverb (convolver)
-        this.reverbGain = this.ctx.createGain();
-        this.reverbGain.gain.value = 0.15;
-        this.reverbDelay = this.ctx.createDelay(0.5);
-        this.reverbDelay.delayTime.value = 0.12;
-        this.reverbFeedback = this.ctx.createGain();
-        this.reverbFeedback.gain.value = 0.3;
-        this.reverbFilter = this.ctx.createBiquadFilter();
-        this.reverbFilter.type = 'lowpass';
-        this.reverbFilter.frequency.value = 2000;
-
-        // Wire drum chain
-        this.drumBus.connect(this.compressor);
-        this.compressor.connect(this.ctx.destination);
-        this.compressor.connect(this.analyser);
-
-        // Reverb send
-        this.drumBus.connect(this.reverbDelay);
-        this.reverbDelay.connect(this.reverbFilter);
-        this.reverbFilter.connect(this.reverbFeedback);
-        this.reverbFeedback.connect(this.reverbDelay);
-        this.reverbFilter.connect(this.reverbGain);
-        this.reverbGain.connect(this.compressor);
-
-        // Visual state
-        this.kickValue = 0;
-        this.snareValue = 0;
-    }
-
-    // KICK DRUM - mammoth footfall
-    // Deep sine pitch sweep + sub rumble + transient click
-    playKick(startTime) {
-        // Sub oscillator - the mammoth stomp
-        const kickOsc = this.ctx.createOscillator();
-        kickOsc.type = 'sine';
-        kickOsc.frequency.setValueAtTime(120, startTime);
-        kickOsc.frequency.exponentialRampToValueAtTime(28, startTime + 0.5);
-
-        const kickGain = this.ctx.createGain();
-        kickGain.gain.setValueAtTime(1.0, startTime);
-        kickGain.gain.setValueAtTime(0.9, startTime + 0.04);
-        kickGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.7);
-
-        // Sub rumble - one octave lower for floor shake
-        const subOsc = this.ctx.createOscillator();
-        subOsc.type = 'sine';
-        subOsc.frequency.setValueAtTime(60, startTime);
-        subOsc.frequency.exponentialRampToValueAtTime(18, startTime + 0.6);
-
-        const subGain = this.ctx.createGain();
-        subGain.gain.setValueAtTime(0.7, startTime);
-        subGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.8);
-
-        // Transient click/snap (noise burst)
-        const clickDur = 0.015;
-        const clickBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * clickDur), this.ctx.sampleRate);
-        const clickData = clickBuf.getChannelData(0);
-        for (let i = 0; i < clickData.length; i++) {
-            clickData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (clickData.length * 0.1));
-        }
-        const clickSrc = this.ctx.createBufferSource();
-        clickSrc.buffer = clickBuf;
-        const clickGain = this.ctx.createGain();
-        clickGain.gain.value = 0.35;
-        const clickFilter = this.ctx.createBiquadFilter();
-        clickFilter.type = 'bandpass';
-        clickFilter.frequency.value = 3500;
-        clickFilter.Q.value = 0.8;
-
-        // Earth rumble - low noise tail
-        const rumbleDur = 0.3;
-        const rumbleBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * rumbleDur), this.ctx.sampleRate);
-        const rumbleData = rumbleBuf.getChannelData(0);
-        for (let i = 0; i < rumbleData.length; i++) {
-            rumbleData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (rumbleData.length * 0.3));
-        }
-        const rumbleSrc = this.ctx.createBufferSource();
-        rumbleSrc.buffer = rumbleBuf;
-        const rumbleGain = this.ctx.createGain();
-        rumbleGain.gain.setValueAtTime(0.12, startTime);
-        rumbleGain.gain.exponentialRampToValueAtTime(0.001, startTime + rumbleDur);
-        const rumbleFilter = this.ctx.createBiquadFilter();
-        rumbleFilter.type = 'lowpass';
-        rumbleFilter.frequency.value = 200;
-
-        // Connect everything
-        kickOsc.connect(kickGain);
-        kickGain.connect(this.drumBus);
-
-        subOsc.connect(subGain);
-        subGain.connect(this.drumBus);
-
-        clickSrc.connect(clickFilter);
-        clickFilter.connect(clickGain);
-        clickGain.connect(this.drumBus);
-
-        rumbleSrc.connect(rumbleFilter);
-        rumbleFilter.connect(rumbleGain);
-        rumbleGain.connect(this.drumBus);
-
-        kickOsc.start(startTime);
-        kickOsc.stop(startTime + 0.8);
-        subOsc.start(startTime);
-        subOsc.stop(startTime + 0.9);
-        clickSrc.start(startTime);
-        rumbleSrc.start(startTime);
-
-        // Visual trigger
-        const delay = Math.max(0, (startTime - this.ctx.currentTime) * 1000);
-        setTimeout(() => { this.kickValue = 1.0; }, delay);
-
-        // Cleanup
-        const cleanTime = (startTime - this.ctx.currentTime + 1.0) * 1000;
-        setTimeout(() => {
-            try { kickOsc.disconnect(); subOsc.disconnect(); clickSrc.disconnect(); rumbleSrc.disconnect(); } catch (e) { }
-        }, Math.max(0, cleanTime));
-    }
-
-    // SNARE DRUM - cracking stone
-    playSnare(startTime) {
-        // Body oscillator
-        const snareOsc = this.ctx.createOscillator();
-        snareOsc.type = 'triangle';
-        snareOsc.frequency.setValueAtTime(200, startTime);
-        snareOsc.frequency.exponentialRampToValueAtTime(120, startTime + 0.08);
-
-        const snareOscGain = this.ctx.createGain();
-        snareOscGain.gain.setValueAtTime(0.5, startTime);
-        snareOscGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.2);
-
-        // Noise body - the main snare rattle
-        const noiseDur = 0.22;
-        const noiseBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * noiseDur), this.ctx.sampleRate);
-        const noiseData = noiseBuf.getChannelData(0);
-        for (let i = 0; i < noiseData.length; i++) {
-            noiseData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (noiseData.length * 0.25));
-        }
-        const noiseSrc = this.ctx.createBufferSource();
-        noiseSrc.buffer = noiseBuf;
-        const noiseGain = this.ctx.createGain();
-        noiseGain.gain.setValueAtTime(0.6, startTime);
-        noiseGain.gain.exponentialRampToValueAtTime(0.001, startTime + noiseDur);
-
-        // Bandpass for character
-        const snareFilter = this.ctx.createBiquadFilter();
-        snareFilter.type = 'peaking';
-        snareFilter.frequency.value = 1200;
-        snareFilter.Q.value = 0.8;
-        snareFilter.gain.value = 6;
-
-        // Highpass to keep it out of the kick's frequency range
-        const snareHP = this.ctx.createBiquadFilter();
-        snareHP.type = 'highpass';
-        snareHP.frequency.value = 150;
-
-        // Connect
-        snareOsc.connect(snareOscGain);
-        snareOscGain.connect(snareHP);
-
-        noiseSrc.connect(snareFilter);
-        snareFilter.connect(noiseGain);
-        noiseGain.connect(snareHP);
-
-        snareHP.connect(this.drumBus);
-
-        snareOsc.start(startTime);
-        snareOsc.stop(startTime + 0.25);
-        noiseSrc.start(startTime);
-
-        // Visual trigger
-        const delay = Math.max(0, (startTime - this.ctx.currentTime) * 1000);
-        setTimeout(() => { this.snareValue = 1.0; }, delay);
-
-        setTimeout(() => {
-            try { snareOsc.disconnect(); noiseSrc.disconnect(); } catch (e) { }
-        }, Math.max(0, (startTime - this.ctx.currentTime + 0.5) * 1000));
-    }
-
-    // HI-HAT - distant metallic tick
-    playHiHat(startTime, open = false) {
-        const dur = open ? 0.3 : 0.06;
-        const noiseBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
-        const noiseData = noiseBuf.getChannelData(0);
-        const decayRate = open ? 0.4 : 0.12;
-        for (let i = 0; i < noiseData.length; i++) {
-            noiseData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (noiseData.length * decayRate));
-        }
-        const noiseSrc = this.ctx.createBufferSource();
-        noiseSrc.buffer = noiseBuf;
-
-        const hatGain = this.ctx.createGain();
-        hatGain.gain.value = open ? 0.12 : 0.09;
-
-        // Highpass for metallic shimmer
-        const hatHP = this.ctx.createBiquadFilter();
-        hatHP.type = 'highpass';
-        hatHP.frequency.value = 7000;
-
-        // Bandpass resonance
-        const hatBP = this.ctx.createBiquadFilter();
-        hatBP.type = 'bandpass';
-        hatBP.frequency.value = 10000;
-        hatBP.Q.value = 1.5;
-
-        noiseSrc.connect(hatHP);
-        hatHP.connect(hatBP);
-        hatBP.connect(hatGain);
-        hatGain.connect(this.drumBus);
-
-        noiseSrc.start(startTime);
-
-        setTimeout(() => {
-            try { noiseSrc.disconnect(); } catch (e) { }
-        }, Math.max(0, (startTime - this.ctx.currentTime + 0.5) * 1000));
-    }
-
-    // CRASH CYMBAL - avalanche wash
-    playCrash(startTime) {
-        const dur = 2.0;
-        const noiseBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
-        const noiseData = noiseBuf.getChannelData(0);
-        for (let i = 0; i < noiseData.length; i++) {
-            noiseData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (noiseData.length * 0.35));
-        }
-        const noiseSrc = this.ctx.createBufferSource();
-        noiseSrc.buffer = noiseBuf;
-
-        const crashGain = this.ctx.createGain();
-        crashGain.gain.setValueAtTime(0.2, startTime);
-        crashGain.gain.exponentialRampToValueAtTime(0.001, startTime + dur);
-
-        // Filtering for cymbal character
-        const crashHP = this.ctx.createBiquadFilter();
-        crashHP.type = 'highpass';
-        crashHP.frequency.value = 4000;
-        crashHP.frequency.exponentialRampToValueAtTime(2000, startTime + dur * 0.5);
-
-        const crashPeak = this.ctx.createBiquadFilter();
-        crashPeak.type = 'peaking';
-        crashPeak.frequency.value = 6000;
-        crashPeak.Q.value = 2;
-        crashPeak.gain.value = 8;
-
-        noiseSrc.connect(crashHP);
-        crashHP.connect(crashPeak);
-        crashPeak.connect(crashGain);
-        crashGain.connect(this.drumBus);
-
-        noiseSrc.start(startTime);
-
-        // Also triggers kick visual for the weight
-        const delay = Math.max(0, (startTime - this.ctx.currentTime) * 1000);
-        setTimeout(() => { this.kickValue = 0.7; }, delay);
-
-        setTimeout(() => {
-            try { noiseSrc.disconnect(); } catch (e) { }
-        }, Math.max(0, (startTime - this.ctx.currentTime + dur + 0.3) * 1000));
-    }
-
-    // Schedule a drum hit
-    playHit(type, startTime) {
-        switch (type) {
-            case 'K': this.playKick(startTime); break;
-            case 'S': this.playSnare(startTime); break;
-            case 'H': this.playHiHat(startTime, false); break;
-            case 'O': this.playHiHat(startTime, true); break;
-            case 'C': this.playCrash(startTime); break;
-        }
-    }
-
-    fadeOut() {
-        this.drumBus.gain.linearRampToValueAtTime(0.001, this.ctx.currentTime + 0.5);
-    }
-
-    fadeIn() {
-        this.drumBus.gain.cancelScheduledValues(this.ctx.currentTime);
-        this.drumBus.gain.setValueAtTime(this.drumBus.gain.value, this.ctx.currentTime);
-        this.drumBus.gain.linearRampToValueAtTime(0.55, this.ctx.currentTime + 0.3);
-    }
-}
-
-// =====================================================
-// ===== DOOM GUITAR SYNTH ============================
-// =====================================================
-
-class DoomSynth {
-    constructor(ctx, analyser) {
-        this.ctx = ctx;
-        this.analyser = analyser;
-
-        this.inputGain = this.ctx.createGain();
-        this.inputGain.gain.value = 0.55;
-
-        // Heavier distortion for mammoth tone
-        this.distortion = this.ctx.createWaveShaper();
-        this.distortion.curve = this.makeDistortionCurve(450);
-        this.distortion.oversample = '4x';
-
-        // Second stage fuzz
-        this.fuzz = this.ctx.createWaveShaper();
-        this.fuzz.curve = this.makeAsymmetricFuzz(200);
-        this.fuzz.oversample = '4x';
-
-        // Dark lowpass filter - even darker for mammoth
-        this.filter = this.ctx.createBiquadFilter();
-        this.filter.type = 'lowpass';
-        this.filter.frequency.value = 1500;
-        this.filter.Q.value = 2.2;
-
-        // Low-mid emphasis for thickness
-        this.midBoost = this.ctx.createBiquadFilter();
-        this.midBoost.type = 'peaking';
-        this.midBoost.frequency.value = 400;
-        this.midBoost.Q.value = 1.0;
-        this.midBoost.gain.value = 4;
-
-        // Darkness filter
-        this.filter2 = this.ctx.createBiquadFilter();
-        this.filter2.type = 'lowpass';
-        this.filter2.frequency.value = 3000;
-        this.filter2.Q.value = 0.5;
-
-        this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.2;
-
-        // Cavernous delay
-        this.delay = this.ctx.createDelay(2.0);
-        this.delay.delayTime.value = 0.5;
-        this.delayFeedback = this.ctx.createGain();
-        this.delayFeedback.gain.value = 0.22;
-        this.delayWet = this.ctx.createGain();
-        this.delayWet.gain.value = 0.1;
-
-        // Wire the chain: input -> dist -> fuzz -> filter -> midboost -> filter2 -> master
-        this.inputGain.connect(this.distortion);
-        this.distortion.connect(this.fuzz);
-        this.fuzz.connect(this.filter);
-        this.filter.connect(this.midBoost);
-        this.midBoost.connect(this.filter2);
-
-        this.filter2.connect(this.masterGain);
-
-        // Delay send
-        this.filter2.connect(this.delay);
-        this.delay.connect(this.delayFeedback);
-        this.delayFeedback.connect(this.delay);
-        this.delay.connect(this.delayWet);
+        this.reverbLP.connect(this.reverbWet);
+        this.reverbWet.connect(this.masterGain);
+
+        // Slapback
+        this.powerComp.connect(this.delay);
+        this.delay.connect(this.delayLP);
+        this.delayLP.connect(this.delayFB);
+        this.delayFB.connect(this.delay);
+        this.delayLP.connect(this.delayWet);
         this.delayWet.connect(this.masterGain);
 
-        this.masterGain.connect(this.ctx.destination);
-        this.masterGain.connect(this.analyser);
-
+        this.masterGain.connect(dest);
         this.currentFreq = 0;
         this.noteOnValue = 0;
     }
 
-    makeDistortionCurve(amount) {
-        const samples = 44100;
-        const curve = new Float32Array(samples);
-        for (let i = 0; i < samples; i++) {
-            const x = (i * 2) / samples - 1;
-            curve[i] = (Math.PI + amount) * x / (Math.PI + amount * Math.abs(x));
+    _tubeSaturation(drive) {
+        const n = 44100, curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+            const x = (i * 2) / n - 1;
+            if (x >= 0) curve[i] = 1.0 - Math.exp(-x * drive);
+            else curve[i] = -(1.0 - Math.exp(x * drive * 1.2)) * 0.95;
         }
         return curve;
     }
 
-    // Asymmetric fuzz for more harmonic richness (tube amp style)
-    makeAsymmetricFuzz(amount) {
-        const samples = 44100;
-        const curve = new Float32Array(samples);
-        for (let i = 0; i < samples; i++) {
-            const x = (i * 2) / samples - 1;
-            if (x >= 0) {
-                curve[i] = Math.tanh(x * amount * 0.01);
-            } else {
-                curve[i] = Math.tanh(x * amount * 0.015) * 0.9;
-            }
-        }
-        return curve;
-    }
-
-    playNote(freq, startTime, duration, palmMute = false) {
+    playNote(freq, startTime, duration, palmMute = false, slide = false) {
         if (freq <= 0) {
-            const restDelay = Math.max(0, (startTime - this.ctx.currentTime) * 1000);
-            setTimeout(() => {
-                this.currentFreq = 0;
-                this.noteOnValue = 0;
-            }, restDelay);
+            const d = Math.max(0, (startTime - this.ctx.currentTime) * 1000);
+            setTimeout(() => { this.currentFreq = 0; this.noteOnValue = 0; }, d);
             return;
         }
 
         const noteGain = this.ctx.createGain();
-        const attack = palmMute ? 0.012 : 0.035;
-        const release = palmMute ? 0.04 : 0.15;
-        const peakGain = palmMute ? 0.16 : 0.2;
-        const sustainTime = Math.max(0.01, duration - attack - release);
+        const attack = palmMute ? 0.008 : 0.015;
+        const decay = palmMute ? 0.04 : 0.08;
+        const sustainLevel = palmMute ? 0.12 : 0.18;
+        const release = palmMute ? 0.03 : 0.12;
+        const sustainTime = Math.max(0.01, duration - attack - decay - release);
 
         noteGain.gain.setValueAtTime(0.0001, startTime);
-        noteGain.gain.linearRampToValueAtTime(peakGain, startTime + attack);
-        noteGain.gain.setValueAtTime(peakGain * 0.9, startTime + attack + sustainTime * 0.5);
+        noteGain.gain.linearRampToValueAtTime(sustainLevel * 1.3, startTime + attack);
+        noteGain.gain.exponentialRampToValueAtTime(Math.max(sustainLevel, 0.001), startTime + attack + decay);
+        noteGain.gain.setValueAtTime(sustainLevel * 0.85, startTime + Math.max(attack + decay, duration - release));
         noteGain.gain.linearRampToValueAtTime(0.0001, startTime + duration);
 
         const oscs = [];
-
-        // Main detuned pair
-        const osc1 = this.ctx.createOscillator();
-        osc1.type = 'sawtooth';
-        osc1.frequency.value = freq;
-        osc1.detune.value = -8;
-        oscs.push({ osc: osc1, gain: 0.18 });
-
-        const osc2 = this.ctx.createOscillator();
-        osc2.type = 'sawtooth';
-        osc2.frequency.value = freq;
-        osc2.detune.value = 8;
-        oscs.push({ osc: osc2, gain: 0.18 });
-
-        // Extra detuned pair for massive width
-        const osc1b = this.ctx.createOscillator();
-        osc1b.type = 'sawtooth';
-        osc1b.frequency.value = freq;
-        osc1b.detune.value = -18;
-        oscs.push({ osc: osc1b, gain: 0.08 });
-
-        const osc2b = this.ctx.createOscillator();
-        osc2b.type = 'sawtooth';
-        osc2b.frequency.value = freq;
-        osc2b.detune.value = 18;
-        oscs.push({ osc: osc2b, gain: 0.08 });
+        [-6, 6, -14, 14].forEach((det, idx) => {
+            const osc = this.ctx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.value = freq;
+            osc.detune.value = det;
+            oscs.push({ osc, gain: idx < 2 ? 0.14 : 0.06 });
+        });
 
         // Power chord fifth
-        const osc3 = this.ctx.createOscillator();
-        osc3.type = 'sawtooth';
-        osc3.frequency.value = freq * 1.5;
-        osc3.detune.value = 5;
-        oscs.push({ osc: osc3, gain: 0.12 });
+        const fifthOsc = this.ctx.createOscillator();
+        fifthOsc.type = 'sawtooth';
+        fifthOsc.frequency.value = freq * 1.5;
+        fifthOsc.detune.value = 4;
+        oscs.push({ osc: fifthOsc, gain: 0.09 });
 
-        // Sub-bass sine (one octave down)
+        // Sub octave
         const subOsc = this.ctx.createOscillator();
         subOsc.type = 'sine';
         subOsc.frequency.value = freq * 0.5;
-        oscs.push({ osc: subOsc, gain: 0.24 });
+        oscs.push({ osc: subOsc, gain: 0.18 });
 
-        // SUB-SUB bass for that mammoth floor rumble (two octaves down on low notes)
-        if (freq < 90) {
-            const subSub = this.ctx.createOscillator();
-            subSub.type = 'sine';
-            subSub.frequency.value = freq * 0.25;
-            oscs.push({ osc: subSub, gain: 0.15 });
-        }
+        // 2nd harmonic sweetener
+        const harmOsc = this.ctx.createOscillator();
+        harmOsc.type = 'sine';
+        harmOsc.frequency.value = freq * 2;
+        oscs.push({ osc: harmOsc, gain: 0.04 });
 
-        // Square wave layer for grit
-        const sqOsc = this.ctx.createOscillator();
-        sqOsc.type = 'square';
-        sqOsc.frequency.value = freq;
-        sqOsc.detune.value = 3;
-        oscs.push({ osc: sqOsc, gain: 0.06 });
+        // Pick transient
+        const pickDur = 0.02;
+        const pickBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * pickDur), this.ctx.sampleRate);
+        const pd = pickBuf.getChannelData(0);
+        for (let i = 0; i < pd.length; i++) pd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (pd.length * 0.08));
+        const pickSrc = this.ctx.createBufferSource();
+        pickSrc.buffer = pickBuf;
+        const pickGain = this.ctx.createGain();
+        pickGain.gain.value = palmMute ? 0.15 : 0.08;
+        const pickFilter = this.ctx.createBiquadFilter();
+        pickFilter.type = 'bandpass';
+        pickFilter.frequency.value = freq * 3;
+        pickFilter.Q.value = 2;
 
         oscs.forEach(({ osc, gain }) => {
             const g = this.ctx.createGain();
@@ -1212,545 +797,1260 @@ class DoomSynth {
             osc.connect(g);
             g.connect(noteGain);
         });
+        pickSrc.connect(pickFilter);
+        pickFilter.connect(pickGain);
+        pickGain.connect(noteGain);
 
         if (palmMute) {
             const pmFilter = this.ctx.createBiquadFilter();
             pmFilter.type = 'lowpass';
-            pmFilter.frequency.value = 380;
-            pmFilter.Q.value = 0.8;
+            pmFilter.frequency.value = 350;
+            pmFilter.Q.value = 1.0;
             noteGain.connect(pmFilter);
             pmFilter.connect(this.inputGain);
-
-            // Chunkier noise burst
-            const bufferSize = Math.floor(this.ctx.sampleRate * 0.03);
-            const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-            const noiseData = noiseBuffer.getChannelData(0);
-            for (let i = 0; i < bufferSize; i++) {
-                noiseData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.12));
-            }
-            const noiseSource = this.ctx.createBufferSource();
-            noiseSource.buffer = noiseBuffer;
-            const noiseGain = this.ctx.createGain();
-            noiseGain.gain.value = 0.1;
-            noiseSource.connect(noiseGain);
-            noiseGain.connect(pmFilter);
-            noiseSource.start(startTime);
         } else {
             noteGain.connect(this.inputGain);
         }
 
         const stopTime = startTime + duration + 0.05;
         oscs.forEach(({ osc }) => {
+            if (slide && this.currentFreq > 0) {
+                osc.frequency.setValueAtTime(this.currentFreq, startTime);
+                osc.frequency.linearRampToValueAtTime(freq, startTime + 0.06);
+            }
             osc.start(startTime);
             osc.stop(stopTime);
         });
+        pickSrc.start(startTime);
 
         const noteOnDelay = Math.max(0, (startTime - this.ctx.currentTime) * 1000);
+        setTimeout(() => { this.currentFreq = freq; this.noteOnValue = 1.0; }, noteOnDelay);
+        setTimeout(() => { this.noteOnValue = 0; }, Math.max(0, (startTime - this.ctx.currentTime + duration) * 1000));
         setTimeout(() => {
-            this.currentFreq = freq;
-            this.noteOnValue = 1.0;
-        }, noteOnDelay);
-
-        const noteOffDelay = Math.max(0, (startTime - this.ctx.currentTime + duration) * 1000);
-        setTimeout(() => {
-            this.noteOnValue = 0;
-        }, noteOffDelay);
-
-        setTimeout(() => {
-            oscs.forEach(({ osc }) => {
-                try { osc.disconnect(); } catch (e) { }
-            });
-            try { noteGain.disconnect(); } catch (e) { }
-        }, (stopTime - this.ctx.currentTime) * 1000 + 200);
+            oscs.forEach(({ osc }) => { try { osc.disconnect(); } catch(e){} });
+            try { noteGain.disconnect(); pickSrc.disconnect(); } catch(e){}
+        }, (stopTime - this.ctx.currentTime) * 1000 + 300);
     }
 
-    fadeOut() {
-        this.masterGain.gain.linearRampToValueAtTime(0.0001, this.ctx.currentTime + 0.3);
+    setDoomTone() {
+        this.tsBass.gain.value = 4;
+        this.tsMid.gain.value = -2;
+        this.tsTreble.gain.value = -8;
+        this.cabLP.frequency.value = 4000;
+        this.preampDrive.curve = this._tubeSaturation(7.0);
+        this.delay.delayTime.value = 0.45;
+        this.delayFB.gain.value = 0.18;
+        this.delayWet.gain.value = 0.06;
+        this.reverbWet.gain.value = 0.1;
     }
 
+    setSpaceTone() {
+        this.tsBass.gain.value = 1;
+        this.tsMid.gain.value = 1;
+        this.tsTreble.gain.value = -3;
+        this.cabLP.frequency.value = 5500;
+        this.preampDrive.curve = this._tubeSaturation(3.0);
+        this.delay.delayTime.value = 0.55;
+        this.delayFB.gain.value = 0.35;
+        this.delayWet.gain.value = 0.18;
+        this.reverbWet.gain.value = 0.2;
+    }
+
+    fadeOut() { this.masterGain.gain.linearRampToValueAtTime(0.0001, this.ctx.currentTime + 0.5); }
     fadeIn() {
         this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
         this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
-        this.masterGain.gain.linearRampToValueAtTime(0.2, this.ctx.currentTime + 0.3);
+        this.masterGain.gain.linearRampToValueAtTime(0.22, this.ctx.currentTime + 0.5);
+    }
+}
+
+
+// =====================================================
+// ===== BASS GUITAR ==================================
+// =====================================================
+
+class BassGuitar {
+    constructor(ctx, dest) {
+        this.ctx = ctx;
+
+        this.drive = ctx.createWaveShaper();
+        const n = 44100, curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve[i] = Math.tanh(x * 2.5); }
+        this.drive.curve = curve;
+        this.drive.oversample = '2x';
+
+        this.bassBoost = ctx.createBiquadFilter();
+        this.bassBoost.type = 'lowshelf';
+        this.bassBoost.frequency.value = 200;
+        this.bassBoost.gain.value = 6;
+
+        this.midCut = ctx.createBiquadFilter();
+        this.midCut.type = 'peaking';
+        this.midCut.frequency.value = 600;
+        this.midCut.Q.value = 1.0;
+        this.midCut.gain.value = -4;
+
+        this.cabLP = ctx.createBiquadFilter();
+        this.cabLP.type = 'lowpass';
+        this.cabLP.frequency.value = 3000;
+        this.cabLP.Q.value = 0.7;
+
+        this.comp = ctx.createDynamicsCompressor();
+        this.comp.threshold.value = -20;
+        this.comp.ratio.value = 6;
+        this.comp.attack.value = 0.003;
+        this.comp.release.value = 0.15;
+
+        this.masterGain = ctx.createGain();
+        this.masterGain.gain.value = 0.35;
+
+        this.drive.connect(this.bassBoost);
+        this.bassBoost.connect(this.midCut);
+        this.midCut.connect(this.cabLP);
+        this.cabLP.connect(this.comp);
+        this.comp.connect(this.masterGain);
+        this.masterGain.connect(dest);
+    }
+
+    playNote(freq, startTime, duration) {
+        if (freq <= 0) return;
+
+        const noteGain = this.ctx.createGain();
+        noteGain.gain.setValueAtTime(0.0001, startTime);
+        noteGain.gain.linearRampToValueAtTime(0.25, startTime + 0.01);
+        noteGain.gain.setValueAtTime(0.2, startTime + Math.max(0.02, duration - 0.08));
+        noteGain.gain.linearRampToValueAtTime(0.0001, startTime + duration);
+
+        // Fundamental sine
+        const fund = this.ctx.createOscillator();
+        fund.type = 'sine';
+        fund.frequency.value = freq;
+        const fundG = this.ctx.createGain(); fundG.gain.value = 0.3;
+        fund.connect(fundG); fundG.connect(noteGain);
+
+        // Gritty triangle
+        const grit = this.ctx.createOscillator();
+        grit.type = 'triangle';
+        grit.frequency.value = freq;
+        grit.detune.value = 3;
+        const gritG = this.ctx.createGain(); gritG.gain.value = 0.15;
+        grit.connect(gritG); gritG.connect(noteGain);
+
+        // Sub octave
+        const sub = this.ctx.createOscillator();
+        sub.type = 'sine';
+        sub.frequency.value = freq * 0.5;
+        const subG = this.ctx.createGain(); subG.gain.value = 0.2;
+        sub.connect(subG); subG.connect(noteGain);
+
+        // Finger noise
+        const noiseDur = 0.015;
+        const noiseBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * noiseDur), this.ctx.sampleRate);
+        const nd = noiseBuf.getChannelData(0);
+        for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (nd.length * 0.05));
+        const noiseSrc = this.ctx.createBufferSource();
+        noiseSrc.buffer = noiseBuf;
+        const noiseG = this.ctx.createGain(); noiseG.gain.value = 0.06;
+        const noiseF = this.ctx.createBiquadFilter();
+        noiseF.type = 'bandpass'; noiseF.frequency.value = freq * 2; noiseF.Q.value = 3;
+        noiseSrc.connect(noiseF); noiseF.connect(noiseG); noiseG.connect(noteGain);
+
+        noteGain.connect(this.drive);
+
+        const stopTime = startTime + duration + 0.05;
+        [fund, grit, sub].forEach(o => { o.start(startTime); o.stop(stopTime); });
+        noiseSrc.start(startTime);
+
+        setTimeout(() => {
+            [fund, grit, sub].forEach(o => { try { o.disconnect(); } catch(e){} });
+            try { noteGain.disconnect(); noiseSrc.disconnect(); } catch(e){}
+        }, (stopTime - this.ctx.currentTime) * 1000 + 300);
+    }
+
+    fadeOut() { this.masterGain.gain.linearRampToValueAtTime(0.0001, this.ctx.currentTime + 0.5); }
+    fadeIn() {
+        this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+        this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
+        this.masterGain.gain.linearRampToValueAtTime(0.35, this.ctx.currentTime + 0.5);
     }
 }
 
 // =====================================================
-// ===== RIFF SEQUENCER ===============================
+// ===== SPACE SYNTH (Mellotron + Arp) ===============
 // =====================================================
 
-class RiffSequencer {
-    constructor(synth, drums) {
-        this.synth = synth;
+class SpaceSynth {
+    constructor(ctx, dest) {
+        this.ctx = ctx;
+
+        // Phaser (4-stage allpass)
+        this.phaserStages = [];
+        this.phaserLFO = ctx.createOscillator();
+        this.phaserLFO.type = 'sine';
+        this.phaserLFO.frequency.value = 0.3;
+        this.phaserLFO.start();
+        for (let i = 0; i < 4; i++) {
+            const ap = ctx.createBiquadFilter();
+            ap.type = 'allpass';
+            ap.frequency.value = 1000;
+            ap.Q.value = 0.5;
+            const lfoGain = ctx.createGain();
+            lfoGain.gain.value = 800;
+            this.phaserLFO.connect(lfoGain);
+            lfoGain.connect(ap.frequency);
+            this.phaserStages.push(ap);
+        }
+
+        // Chorus
+        this.chorusDelay = ctx.createDelay(0.05);
+        this.chorusDelay.delayTime.value = 0.015;
+        this.chorusLFO = ctx.createOscillator();
+        this.chorusLFO.type = 'sine';
+        this.chorusLFO.frequency.value = 0.7;
+        this.chorusLFO.start();
+        this.chorusDepth = ctx.createGain();
+        this.chorusDepth.gain.value = 0.004;
+        this.chorusLFO.connect(this.chorusDepth);
+        this.chorusDepth.connect(this.chorusDelay.delayTime);
+        this.chorusMix = ctx.createGain();
+        this.chorusMix.gain.value = 0.4;
+
+        // Cosmic delay
+        this.cosmicDelay = ctx.createDelay(2.0);
+        this.cosmicDelay.delayTime.value = 0.666;
+        this.cosmicFB = ctx.createGain();
+        this.cosmicFB.gain.value = 0.4;
+        this.cosmicLP = ctx.createBiquadFilter();
+        this.cosmicLP.type = 'lowpass';
+        this.cosmicLP.frequency.value = 3500;
+        this.cosmicWet = ctx.createGain();
+        this.cosmicWet.gain.value = 0.2;
+
+        this.masterGain = ctx.createGain();
+        this.masterGain.gain.value = 0.0;
+
+        // Wire phaser chain
+        this.padInput = ctx.createGain();
+        this.padInput.gain.value = 1.0;
+        let prev = this.padInput;
+        this.phaserStages.forEach(ap => { prev.connect(ap); prev = ap; });
+
+        // Phaser -> chorus
+        prev.connect(this.chorusDelay);
+        this.chorusDelay.connect(this.chorusMix);
+        prev.connect(this.masterGain); // dry
+        this.chorusMix.connect(this.masterGain);
+
+        // Cosmic delay
+        this.masterGain.connect(this.cosmicDelay);
+        this.cosmicDelay.connect(this.cosmicLP);
+        this.cosmicLP.connect(this.cosmicFB);
+        this.cosmicFB.connect(this.cosmicDelay);
+        this.cosmicLP.connect(this.cosmicWet);
+        this.cosmicWet.connect(dest);
+
+        this.masterGain.connect(dest);
+
+        this.padOscs = [];
+        this.arpOscs = [];
+    }
+
+    playPad(freqs, startTime, duration) {
+        if (!freqs || freqs.length === 0) return;
+
+        freqs.forEach(freq => {
+            const voices = [];
+            // Mellotron-style: saw + 2x triangle detuned with tape wobble
+            const types = ['sawtooth', 'triangle', 'triangle'];
+            const detunes = [0, -12, 8];
+            types.forEach((type, i) => {
+                const osc = this.ctx.createOscillator();
+                osc.type = type;
+                osc.frequency.value = freq;
+                osc.detune.value = detunes[i];
+
+                // Tape wobble LFO
+                const wobbleLFO = this.ctx.createOscillator();
+                wobbleLFO.type = 'sine';
+                wobbleLFO.frequency.value = 0.3 + Math.random() * 0.5;
+                const wobbleGain = this.ctx.createGain();
+                wobbleGain.gain.value = 6 + Math.random() * 4;
+                wobbleLFO.connect(wobbleGain);
+                wobbleGain.connect(osc.detune);
+                wobbleLFO.start(startTime);
+                wobbleLFO.stop(startTime + duration + 0.5);
+
+                voices.push({ osc, wobbleLFO });
+            });
+
+            const noteGain = this.ctx.createGain();
+            const attack = 1.2;
+            const release = 1.5;
+            noteGain.gain.setValueAtTime(0.0001, startTime);
+            noteGain.gain.linearRampToValueAtTime(0.06, startTime + attack);
+            noteGain.gain.setValueAtTime(0.05, startTime + Math.max(attack, duration - release));
+            noteGain.gain.linearRampToValueAtTime(0.0001, startTime + duration);
+
+            voices.forEach(({ osc }) => {
+                osc.connect(noteGain);
+                osc.start(startTime);
+                osc.stop(startTime + duration + 0.1);
+            });
+            noteGain.connect(this.padInput);
+
+            setTimeout(() => {
+                voices.forEach(({ osc, wobbleLFO }) => {
+                    try { osc.disconnect(); wobbleLFO.disconnect(); } catch(e){}
+                });
+                try { noteGain.disconnect(); } catch(e){}
+            }, (startTime + duration - this.ctx.currentTime) * 1000 + 500);
+        });
+    }
+
+    playArpNote(freq, startTime, duration) {
+        if (!freq || freq <= 0) return;
+
+        const osc = this.ctx.createOscillator();
+        osc.type = 'square';
+        osc.frequency.value = freq;
+
+        const oscGain = this.ctx.createGain();
+        oscGain.gain.setValueAtTime(0.0001, startTime);
+        oscGain.gain.linearRampToValueAtTime(0.07, startTime + 0.01);
+        oscGain.gain.exponentialRampToValueAtTime(0.03, startTime + duration * 0.3);
+        oscGain.gain.linearRampToValueAtTime(0.0001, startTime + duration);
+
+        // Resonant filter sweep
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.Q.value = 8;
+        filter.frequency.setValueAtTime(freq * 6, startTime);
+        filter.frequency.exponentialRampToValueAtTime(freq * 1.5, startTime + duration * 0.8);
+
+        osc.connect(filter);
+        filter.connect(oscGain);
+        oscGain.connect(this.padInput);
+
+        osc.start(startTime);
+        osc.stop(startTime + duration + 0.05);
+
+        setTimeout(() => {
+            try { osc.disconnect(); filter.disconnect(); oscGain.disconnect(); } catch(e){}
+        }, (startTime + duration - this.ctx.currentTime) * 1000 + 300);
+    }
+
+    fadeIn(time = 2.0) {
+        this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+        this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
+        this.masterGain.gain.linearRampToValueAtTime(0.5, this.ctx.currentTime + time);
+    }
+
+    fadeOut(time = 2.0) {
+        this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+        this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
+        this.masterGain.gain.linearRampToValueAtTime(0.0001, this.ctx.currentTime + time);
+    }
+}
+
+
+// =====================================================
+// ===== DOOM DRUMS ===================================
+// =====================================================
+
+class DoomDrums {
+    constructor(ctx, dest) {
+        this.ctx = ctx;
+
+        this.roomVerb = ctx.createConvolver();
+        const roomLen = ctx.sampleRate * 1.2;
+        const roomBuf = ctx.createBuffer(2, roomLen, ctx.sampleRate);
+        for (let ch = 0; ch < 2; ch++) {
+            const d = roomBuf.getChannelData(ch);
+            for (let i = 0; i < roomLen; i++) {
+                d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (roomLen * 0.25)) * 0.5;
+            }
+        }
+        this.roomVerb.buffer = roomBuf;
+
+        this.roomWet = ctx.createGain();
+        this.roomWet.gain.value = 0.15;
+        this.roomVerb.connect(this.roomWet);
+        this.roomWet.connect(dest);
+
+        this.dryGain = ctx.createGain();
+        this.dryGain.gain.value = 0.45;
+        this.dryGain.connect(dest);
+        this.dryGain.connect(this.roomVerb);
+
+        this.kickVal = 0;
+        this.snareVal = 0;
+    }
+
+    kick(time) {
+        const body = this.ctx.createOscillator();
+        body.type = 'sine';
+        body.frequency.setValueAtTime(110, time);
+        body.frequency.exponentialRampToValueAtTime(32, time + 0.35);
+
+        const sub = this.ctx.createOscillator();
+        sub.type = 'sine';
+        sub.frequency.setValueAtTime(55, time);
+        sub.frequency.exponentialRampToValueAtTime(20, time + 0.4);
+
+        const bodyG = this.ctx.createGain();
+        bodyG.gain.setValueAtTime(0.9, time);
+        bodyG.gain.exponentialRampToValueAtTime(0.001, time + 0.5);
+
+        const subG = this.ctx.createGain();
+        subG.gain.setValueAtTime(0.7, time);
+        subG.gain.exponentialRampToValueAtTime(0.001, time + 0.6);
+
+        // Click transient
+        const clickDur = 0.008;
+        const clickBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * clickDur), this.ctx.sampleRate);
+        const cd = clickBuf.getChannelData(0);
+        for (let i = 0; i < cd.length; i++) cd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (cd.length * 0.15));
+        const clickSrc = this.ctx.createBufferSource();
+        clickSrc.buffer = clickBuf;
+        const clickG = this.ctx.createGain();
+        clickG.gain.value = 0.5;
+        const clickF = this.ctx.createBiquadFilter();
+        clickF.type = 'highpass';
+        clickF.frequency.value = 3000;
+
+        body.connect(bodyG); bodyG.connect(this.dryGain);
+        sub.connect(subG); subG.connect(this.dryGain);
+        clickSrc.connect(clickF); clickF.connect(clickG); clickG.connect(this.dryGain);
+
+        body.start(time); body.stop(time + 0.6);
+        sub.start(time); sub.stop(time + 0.7);
+        clickSrc.start(time);
+
+        const d = Math.max(0, (time - this.ctx.currentTime) * 1000);
+        setTimeout(() => this.kickVal = 1.0, d);
+        setTimeout(() => this.kickVal = 0, d + 120);
+        setTimeout(() => {
+            [body, sub].forEach(o => { try { o.disconnect(); } catch(e){} });
+            try { bodyG.disconnect(); subG.disconnect(); clickSrc.disconnect(); } catch(e){}
+        }, (time - this.ctx.currentTime) * 1000 + 800);
+    }
+
+    snare(time) {
+        const body = this.ctx.createOscillator();
+        body.type = 'triangle';
+        body.frequency.setValueAtTime(210, time);
+        body.frequency.exponentialRampToValueAtTime(130, time + 0.08);
+
+        const bodyG = this.ctx.createGain();
+        bodyG.gain.setValueAtTime(0.5, time);
+        bodyG.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
+
+        // Noise buzz
+        const nDur = 0.25;
+        const nBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * nDur), this.ctx.sampleRate);
+        const nd = nBuf.getChannelData(0);
+        for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (nd.length * 0.3));
+        const nSrc = this.ctx.createBufferSource();
+        nSrc.buffer = nBuf;
+        const nG = this.ctx.createGain(); nG.gain.value = 0.4;
+        const nHP = this.ctx.createBiquadFilter();
+        nHP.type = 'highpass'; nHP.frequency.value = 2000;
+        const nBP = this.ctx.createBiquadFilter();
+        nBP.type = 'bandpass'; nBP.frequency.value = 4000; nBP.Q.value = 1;
+
+        body.connect(bodyG); bodyG.connect(this.dryGain);
+        nSrc.connect(nHP); nHP.connect(nBP); nBP.connect(nG); nG.connect(this.dryGain);
+
+        body.start(time); body.stop(time + 0.3);
+        nSrc.start(time);
+
+        const d = Math.max(0, (time - this.ctx.currentTime) * 1000);
+        setTimeout(() => this.snareVal = 1.0, d);
+        setTimeout(() => this.snareVal = 0, d + 80);
+        setTimeout(() => {
+            try { body.disconnect(); bodyG.disconnect(); nSrc.disconnect(); nG.disconnect(); } catch(e){}
+        }, (time - this.ctx.currentTime) * 1000 + 500);
+    }
+
+    hihat(time, open = false) {
+        const dur = open ? 0.3 : 0.06;
+        const nBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
+        const nd = nBuf.getChannelData(0);
+        const decay = open ? 0.5 : 0.08;
+        for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (nd.length * decay));
+        const nSrc = this.ctx.createBufferSource();
+        nSrc.buffer = nBuf;
+        const g = this.ctx.createGain(); g.gain.value = open ? 0.18 : 0.15;
+        const hp = this.ctx.createBiquadFilter();
+        hp.type = 'highpass'; hp.frequency.value = 7500;
+        const bp = this.ctx.createBiquadFilter();
+        bp.type = 'bandpass'; bp.frequency.value = 10000; bp.Q.value = 2;
+
+        nSrc.connect(hp); hp.connect(bp); bp.connect(g); g.connect(this.dryGain);
+        nSrc.start(time);
+
+        setTimeout(() => { try { nSrc.disconnect(); g.disconnect(); } catch(e){} },
+            (time - this.ctx.currentTime) * 1000 + 500);
+    }
+
+    ride(time, bell = false) {
+        const dur = 0.8;
+        const nBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
+        const nd = nBuf.getChannelData(0);
+        for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (nd.length * 0.6));
+        const nSrc = this.ctx.createBufferSource();
+        nSrc.buffer = nBuf;
+        const g = this.ctx.createGain(); g.gain.value = 0.1;
+        const hp = this.ctx.createBiquadFilter();
+        hp.type = 'highpass'; hp.frequency.value = 5000;
+        const pk = this.ctx.createBiquadFilter();
+        pk.type = 'peaking'; pk.frequency.value = 8000; pk.Q.value = 3; pk.gain.value = 4;
+
+        nSrc.connect(hp); hp.connect(pk); pk.connect(g); g.connect(this.dryGain);
+
+        if (bell) {
+            const bellOsc = this.ctx.createOscillator();
+            bellOsc.type = 'sine';
+            bellOsc.frequency.value = 4200;
+            const bellG = this.ctx.createGain();
+            bellG.gain.setValueAtTime(0.04, time);
+            bellG.gain.exponentialRampToValueAtTime(0.001, time + 0.5);
+            bellOsc.connect(bellG); bellG.connect(this.dryGain);
+            bellOsc.start(time); bellOsc.stop(time + 0.6);
+        }
+
+        nSrc.start(time);
+        setTimeout(() => { try { nSrc.disconnect(); g.disconnect(); } catch(e){} },
+            (time - this.ctx.currentTime) * 1000 + 1000);
+    }
+
+    tom(time, pitch = 'mid') {
+        const freqs = { high: 200, mid: 140, low: 90 };
+        const f = freqs[pitch] || 140;
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(f, time);
+        osc.frequency.exponentialRampToValueAtTime(f * 0.5, time + 0.3);
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.5, time);
+        g.gain.exponentialRampToValueAtTime(0.001, time + 0.35);
+        osc.connect(g); g.connect(this.dryGain);
+        osc.start(time); osc.stop(time + 0.4);
+        setTimeout(() => { try { osc.disconnect(); g.disconnect(); } catch(e){} },
+            (time - this.ctx.currentTime) * 1000 + 500);
+    }
+
+    crash(time) {
+        const dur = 1.5;
+        const nBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
+        const nd = nBuf.getChannelData(0);
+        for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (nd.length * 0.5));
+        const nSrc = this.ctx.createBufferSource();
+        nSrc.buffer = nBuf;
+        const g = this.ctx.createGain(); g.gain.value = 0.2;
+        const hp = this.ctx.createBiquadFilter();
+        hp.type = 'highpass'; hp.frequency.value = 4000;
+
+        nSrc.connect(hp); hp.connect(g); g.connect(this.dryGain);
+        nSrc.start(time);
+        setTimeout(() => { try { nSrc.disconnect(); g.disconnect(); } catch(e){} },
+            (time - this.ctx.currentTime) * 1000 + 2000);
+    }
+
+    setSpaceRoom() {
+        this.roomWet.gain.value = 0.3;
+        this.dryGain.gain.value = 0.35;
+    }
+
+    setDoomRoom() {
+        this.roomWet.gain.value = 0.15;
+        this.dryGain.gain.value = 0.45;
+    }
+}
+
+
+// ===== NOTE FREQUENCIES (Drop D) =====
+const N = {
+    R: 0,    // Rest
+    D1: 36.71, Eb1: 38.89, E1: 41.20, F1: 43.65, Gb1: 46.25, G1: 49.00,
+    Ab1: 51.91, A1: 55.00, Bb1: 58.27, B1: 61.74,
+    D2: 73.42, Eb2: 77.78, E2: 82.41, F2: 87.31, Gb2: 92.50, G2: 98.00,
+    Ab2: 103.83, A2: 110.00, Bb2: 116.54, B2: 123.47,
+    D3: 146.83, Eb3: 155.56, E3: 164.81, F3: 174.61, Gb3: 185.00, G3: 196.00,
+    Ab3: 207.65, A3: 220.00, Bb3: 233.08, B3: 246.94,
+    D4: 293.66, Eb4: 311.13, E4: 329.63, F4: 349.23, Gb4: 369.99, G4: 392.00,
+    Ab4: 415.30, A4: 440.00, Bb4: 466.16, B4: 493.88,
+    D5: 587.33, E5: 659.26, G5: 783.99, A5: 880.00, B5: 987.77,
+};
+
+// ===== SONG DATA =====
+const SONGS = [
+    {
+        name: "MONOLITH RISING",
+        sections: [
+            {
+                name: "DOOM AWAKENS",
+                genre: 0.0, bpm: 44, repeats: 3, visualMode: 0,
+                guitar: [
+                    { f: N.D1, dur: 4, pm: true },
+                    { f: N.R, dur: 1 },
+                    { f: N.D1, dur: 2, pm: true },
+                    { f: N.Eb1, dur: 2, slide: true },
+                    { f: N.D1, dur: 4 },
+                    { f: N.R, dur: 1 },
+                    { f: N.A1, dur: 2 },
+                    { f: N.G1, dur: 2, slide: true },
+                ],
+                bass: [
+                    { f: N.D1, dur: 4 }, { f: N.R, dur: 1 },
+                    { f: N.D1, dur: 3 },
+                    { f: N.D1, dur: 4 }, { f: N.R, dur: 1 },
+                    { f: N.A1, dur: 2 }, { f: N.G1, dur: 1 },
+                ],
+                drums: "K---S---K-K-S---|K---S---K-K-S-OH",
+                padChord: null,
+                arp: null,
+            },
+            {
+                name: "MAMMOTH MARCH",
+                genre: 0.1, bpm: 46, repeats: 3, visualMode: 1,
+                guitar: [
+                    { f: N.D1, dur: 3 }, { f: N.F1, dur: 1 },
+                    { f: N.G1, dur: 2 }, { f: N.D1, dur: 2 },
+                    { f: N.Bb1, dur: 3 }, { f: N.A1, dur: 1 },
+                    { f: N.G1, dur: 2 }, { f: N.F1, dur: 1 }, { f: N.D1, dur: 1 },
+                ],
+                bass: [
+                    { f: N.D1, dur: 3 }, { f: N.F1, dur: 1 },
+                    { f: N.G1, dur: 2 }, { f: N.D1, dur: 2 },
+                    { f: N.Bb1, dur: 3 }, { f: N.A1, dur: 1 },
+                    { f: N.G1, dur: 2 }, { f: N.F1, dur: 2 },
+                ],
+                drums: "K--K--S-K--K--S-|K--K--S-K--KT-TL",
+                padChord: null,
+                arp: null,
+            },
+            {
+                name: "ASCENDING",
+                genre: 0.35, bpm: 50, repeats: 3, visualMode: 2,
+                guitar: [
+                    { f: N.D2, dur: 2 }, { f: N.F2, dur: 2 },
+                    { f: N.G2, dur: 2 }, { f: N.A2, dur: 2 },
+                    { f: N.Bb2, dur: 3 }, { f: N.A2, dur: 1 },
+                    { f: N.G2, dur: 2 }, { f: N.F2, dur: 1 }, { f: N.D2, dur: 1 },
+                ],
+                bass: [
+                    { f: N.D1, dur: 4 }, { f: N.G1, dur: 4 },
+                    { f: N.Bb1, dur: 4 }, { f: N.A1, dur: 2 }, { f: N.D1, dur: 2 },
+                ],
+                drums: "K-H-S-H-K-H-S-H-|K-H-S-H-K-H-SOH-",
+                padChord: [N.D3, N.F3, N.A3],
+                arp: null,
+            },
+            {
+                name: "COSMIC DRIFT",
+                genre: 0.7, bpm: 72, repeats: 4, visualMode: 3,
+                guitar: [
+                    { f: N.D3, dur: 2 }, { f: N.G3, dur: 1 }, { f: N.A3, dur: 1 },
+                    { f: N.Bb3, dur: 2 }, { f: N.A3, dur: 1 }, { f: N.G3, dur: 1 },
+                    { f: N.F3, dur: 2 }, { f: N.D3, dur: 2 },
+                    { f: N.E3, dur: 2 }, { f: N.F3, dur: 1 }, { f: N.G3, dur: 1 },
+                ],
+                bass: [
+                    { f: N.D2, dur: 2 }, { f: N.G2, dur: 2 },
+                    { f: N.Bb2, dur: 2 }, { f: N.A2, dur: 2 },
+                    { f: N.F2, dur: 2 }, { f: N.D2, dur: 2 },
+                    { f: N.E2, dur: 2 }, { f: N.G2, dur: 2 },
+                ],
+                drums: "K-R-S-R-K-R-S-R-|K-R-S-R-K-R-S-RB",
+                padChord: [N.D4, N.G4, N.Bb4],
+                arp: [N.D4, N.F4, N.G4, N.A4, N.Bb4, N.A4, N.G4, N.F4],
+            },
+            {
+                name: "NEBULA SEQUENCE",
+                genre: 0.9, bpm: 80, repeats: 4, visualMode: 3,
+                guitar: [
+                    { f: N.A3, dur: 1 }, { f: N.B3, dur: 1 },
+                    { f: N.D4, dur: 2 }, { f: N.E4, dur: 1 }, { f: N.D4, dur: 1 },
+                    { f: N.B3, dur: 1 }, { f: N.A3, dur: 1 },
+                    { f: N.G3, dur: 2 }, { f: N.A3, dur: 1 }, { f: N.B3, dur: 1 },
+                    { f: N.D4, dur: 1 }, { f: N.E4, dur: 1 },
+                    { f: N.G4, dur: 2 },
+                ],
+                bass: [
+                    { f: N.A2, dur: 2 }, { f: N.D2, dur: 2 },
+                    { f: N.B2, dur: 2 }, { f: N.A2, dur: 2 },
+                    { f: N.G2, dur: 2 }, { f: N.A2, dur: 2 },
+                    { f: N.D3, dur: 2 }, { f: N.E3, dur: 2 },
+                ],
+                drums: "K-R-S-R-K-R-S-RB|K-R-S-RBK-R-SOH-",
+                padChord: [N.A3, N.D4, N.E4, N.G4],
+                arp: [N.A4, N.D5, N.E5, N.G5, N.A5, N.G5, N.E5, N.D5],
+            },
+            {
+                name: "RE-ENTRY",
+                genre: 0.4, bpm: 56, repeats: 2, visualMode: 2,
+                guitar: [
+                    { f: N.D2, dur: 3 }, { f: N.F2, dur: 1 },
+                    { f: N.A2, dur: 2 }, { f: N.G2, dur: 2 },
+                    { f: N.Bb2, dur: 3 }, { f: N.A2, dur: 1 },
+                    { f: N.G2, dur: 2 }, { f: N.D2, dur: 2 },
+                ],
+                bass: [
+                    { f: N.D1, dur: 4 }, { f: N.A1, dur: 2 }, { f: N.G1, dur: 2 },
+                    { f: N.Bb1, dur: 3 }, { f: N.A1, dur: 1 },
+                    { f: N.G1, dur: 2 }, { f: N.D1, dur: 2 },
+                ],
+                drums: "K---S-H-K-K-S---|K---S-H-K-K-SOHT",
+                padChord: [N.D3, N.F3, N.A3],
+                arp: null,
+            },
+            {
+                name: "LEVIATHAN DIRGE",
+                genre: 0.0, bpm: 38, repeats: 2, visualMode: 0,
+                guitar: [
+                    { f: N.D1, dur: 6 },
+                    { f: N.Eb1, dur: 2, slide: true },
+                    { f: N.D1, dur: 4 },
+                    { f: N.R, dur: 2 },
+                    { f: N.G1, dur: 3 }, { f: N.F1, dur: 1 },
+                    { f: N.D1, dur: 4 },
+                    { f: N.R, dur: 2 },
+                ],
+                bass: [
+                    { f: N.D1, dur: 6 }, { f: N.Eb1, dur: 2 },
+                    { f: N.D1, dur: 6 }, { f: N.R, dur: 2 },
+                    { f: N.G1, dur: 3 }, { f: N.F1, dur: 1 },
+                    { f: N.D1, dur: 4 }, { f: N.R, dur: 2 },
+                ],
+                drums: "K-------S-------|K-------S---T-TL",
+                padChord: null,
+                arp: null,
+            },
+        ]
+    },
+    {
+        name: "VOID TRAVELER",
+        sections: [
+            {
+                name: "STAR BIRTH",
+                genre: 0.85, bpm: 68, repeats: 3, visualMode: 3,
+                guitar: [
+                    { f: N.E3, dur: 2 }, { f: N.G3, dur: 1 }, { f: N.A3, dur: 1 },
+                    { f: N.B3, dur: 2 }, { f: N.A3, dur: 1 }, { f: N.G3, dur: 1 },
+                    { f: N.E3, dur: 2 }, { f: N.D3, dur: 2 },
+                    { f: N.E3, dur: 2 }, { f: N.G3, dur: 2 },
+                ],
+                bass: [
+                    { f: N.E2, dur: 4 }, { f: N.B2, dur: 4 },
+                    { f: N.E2, dur: 2 }, { f: N.D2, dur: 2 },
+                    { f: N.E2, dur: 2 }, { f: N.G2, dur: 2 },
+                ],
+                drums: "K-R-S-R-K-R-S-R-|K-RBS-R-K-R-SOH-",
+                padChord: [N.E3, N.G3, N.B3, N.D4],
+                arp: [N.E4, N.G4, N.B4, N.D5, N.E5, N.D5, N.B4, N.G4],
+            },
+            {
+                name: "GRAVITY WELL",
+                genre: 0.5, bpm: 56, repeats: 3, visualMode: 2,
+                guitar: [
+                    { f: N.E2, dur: 3 }, { f: N.G2, dur: 1 },
+                    { f: N.A2, dur: 2 }, { f: N.E2, dur: 2 },
+                    { f: N.D2, dur: 3 }, { f: N.E2, dur: 1 },
+                    { f: N.F2, dur: 2 }, { f: N.E2, dur: 2 },
+                ],
+                bass: [
+                    { f: N.E1, dur: 4 }, { f: N.A1, dur: 4 },
+                    { f: N.D2, dur: 2 }, { f: N.E1, dur: 2 },
+                    { f: N.F1, dur: 2 }, { f: N.E1, dur: 2 },
+                ],
+                drums: "K--KS-H-K--KS-H-|K--KS-H-K--KS-OHT",
+                padChord: [N.E3, N.A3, N.B3],
+                arp: [N.E4, N.A4, N.B4, N.E5],
+            },
+            {
+                name: "BLACK HOLE SUN",
+                genre: 0.0, bpm: 42, repeats: 3, visualMode: 0,
+                guitar: [
+                    { f: N.E1, dur: 4, pm: true },
+                    { f: N.R, dur: 1 },
+                    { f: N.E1, dur: 2, pm: true },
+                    { f: N.F1, dur: 1, slide: true },
+                    { f: N.E1, dur: 4 },
+                    { f: N.G1, dur: 2 },
+                    { f: N.F1, dur: 1 }, { f: N.E1, dur: 1 },
+                ],
+                bass: [
+                    { f: N.E1, dur: 4 }, { f: N.R, dur: 1 },
+                    { f: N.E1, dur: 3 },
+                    { f: N.E1, dur: 4 },
+                    { f: N.G1, dur: 2 }, { f: N.F1, dur: 1 }, { f: N.E1, dur: 1 },
+                ],
+                drums: "K---S---K-K-S---|K---S---K-K-S-TL",
+                padChord: null,
+                arp: null,
+            },
+            {
+                name: "ESCAPE VELOCITY",
+                genre: 0.6, bpm: 64, repeats: 3, visualMode: 2,
+                guitar: [
+                    { f: N.A2, dur: 2 }, { f: N.D3, dur: 1 }, { f: N.E3, dur: 1 },
+                    { f: N.G3, dur: 2 }, { f: N.E3, dur: 1 }, { f: N.D3, dur: 1 },
+                    { f: N.A2, dur: 2 }, { f: N.G2, dur: 2 },
+                    { f: N.A2, dur: 2 }, { f: N.D3, dur: 2 },
+                ],
+                bass: [
+                    { f: N.A1, dur: 4 }, { f: N.G1, dur: 4 },
+                    { f: N.A1, dur: 2 }, { f: N.G1, dur: 2 },
+                    { f: N.A1, dur: 2 }, { f: N.D2, dur: 2 },
+                ],
+                drums: "K-H-S-H-K-H-S-H-|K-H-S-H-K-H-SOH-",
+                padChord: [N.A3, N.D4, N.E4],
+                arp: [N.A4, N.D5, N.E5, N.A5, N.E5, N.D5],
+            },
+            {
+                name: "KOSMISCHE MUSIK",
+                genre: 0.95, bpm: 78, repeats: 4, visualMode: 3,
+                guitar: [
+                    { f: N.D3, dur: 1 }, { f: N.E3, dur: 1 },
+                    { f: N.G3, dur: 1 }, { f: N.A3, dur: 1 },
+                    { f: N.D4, dur: 2 },
+                    { f: N.B3, dur: 1 }, { f: N.A3, dur: 1 },
+                    { f: N.G3, dur: 1 }, { f: N.E3, dur: 1 },
+                    { f: N.D3, dur: 2 },
+                    { f: N.E3, dur: 1 }, { f: N.G3, dur: 1 },
+                    { f: N.A3, dur: 1 }, { f: N.B3, dur: 1 },
+                ],
+                bass: [
+                    { f: N.D2, dur: 2 }, { f: N.G2, dur: 2 },
+                    { f: N.D3, dur: 2 }, { f: N.B2, dur: 2 },
+                    { f: N.G2, dur: 2 }, { f: N.D2, dur: 2 },
+                    { f: N.E2, dur: 2 }, { f: N.A2, dur: 2 },
+                ],
+                drums: "K-RBS-R-K-RBS-R-|K-RBS-RBK-RBS-OH-",
+                padChord: [N.D4, N.G4, N.A4, N.B4],
+                arp: [N.D5, N.G5, N.A5, N.B5, N.D5, N.A5, N.G5, N.E5],
+            },
+        ]
+    },
+];
+
+
+// =====================================================
+// ===== SONG SEQUENCER ===============================
+// =====================================================
+
+class SongSequencer {
+    constructor(guitar, bass, drums, spaceSynth) {
+        this.guitar = guitar;
+        this.bass = bass;
         this.drums = drums;
-        this.isPlaying = false;
-        this.currentRiffIndex = Math.floor(Math.random() * RIFFS.length);
+        this.spaceSynth = spaceSynth;
+        this.currentSong = 0;
+        this.currentSection = 0;
         this.currentRepeat = 0;
-        this.currentStep = 0;
-        this.nextNoteTime = 0;
-        this.schedulerTimer = null;
-        this.riffPhase = 0;
-
-        // Drum tracking: global 16th-note counter within the current pattern
-        this.drumIndex = 0;
-        this.nextDrumTime = 0;
-    }
-
-    get currentRiff() {
-        return RIFFS[this.currentRiffIndex];
-    }
-
-    get sixteenthDuration() {
-        return 60.0 / this.currentRiff.bpm / 4.0;
+        this.isPlaying = false;
+        this.scheduledUntil = 0;
+        this.lookAhead = 0.2;
+        this.scheduleInterval = null;
+        this.targetGenre = 0.0;
+        this.riffFlashVal = 0;
     }
 
     start() {
-        if (this.isPlaying) return;
         this.isPlaying = true;
-        this.synth.fadeIn();
-        this.drums.fadeIn();
-        this.nextNoteTime = this.synth.ctx.currentTime + 0.1;
-        this.nextDrumTime = this.synth.ctx.currentTime + 0.1;
-        this.currentStep = 0;
-        this.drumIndex = 0;
+        this.currentSong = 0;
+        this.currentSection = 0;
         this.currentRepeat = 0;
-        this.scheduleAhead();
-        showRiffName(this.currentRiff.name, this.currentRiff.bpm);
-        if (isDoom > 0.5) {
-            currentMode = this.currentRiff.visualMode;
-        }
+        this.scheduledUntil = audioContext.currentTime + 0.5;
+        this.applySection();
+        this.scheduleInterval = setInterval(() => this.schedule(), 100);
     }
 
     stop() {
         this.isPlaying = false;
-        if (this.schedulerTimer) {
-            clearTimeout(this.schedulerTimer);
-            this.schedulerTimer = null;
-        }
-        this.synth.fadeOut();
-        this.drums.fadeOut();
-        this.synth.currentFreq = 0;
-        this.synth.noteOnValue = 0;
+        if (this.scheduleInterval) clearInterval(this.scheduleInterval);
     }
 
-    scheduleAhead() {
+    applySection() {
+        const song = SONGS[this.currentSong];
+        const section = song.sections[this.currentSection];
+        this.targetGenre = section.genre;
+
+        // Apply instrument tones
+        const g = section.genre;
+        if (g < 0.3) {
+            this.guitar.setDoomTone();
+            this.drums.setDoomRoom();
+        } else if (g > 0.6) {
+            this.guitar.setSpaceTone();
+            this.drums.setSpaceRoom();
+        } else {
+            // Blend
+            this.guitar.tsBass.gain.value = 4 - g * 5;
+            this.guitar.tsMid.gain.value = -2 + g * 3;
+            this.guitar.delay.delayTime.value = 0.42 + g * 0.15;
+            this.guitar.delayFB.gain.value = 0.18 + g * 0.2;
+            this.guitar.delayWet.gain.value = 0.06 + g * 0.14;
+            this.drums.roomWet.gain.value = 0.15 + g * 0.2;
+        }
+
+        // Space synth fading
+        if (g > 0.25) {
+            this.spaceSynth.fadeIn(3.0);
+        } else {
+            this.spaceSynth.fadeOut(3.0);
+        }
+
+        // Visual mode
+        currentMode = section.visualMode;
+
+        this.showSection(song.name, section.name, g);
+    }
+
+    showSection(songName, sectionName, genre) {
+        let icon, label;
+        if (genre < 0.2) { icon = '\uD83E\uDDA3'; label = 'STONER DOOM'; }
+        else if (genre < 0.5) { icon = '\uD83E\uDDA3'; label = 'DOOM RISING'; }
+        else if (genre < 0.75) { icon = '\uD83D\uDE80'; label = 'SPACE ROCK'; }
+        else { icon = '\uD83C\uDF0C'; label = 'KRAUTROCK'; }
+
+        showRiffName(sectionName);
+        const gi = document.getElementById('genre-indicator');
+        if (gi) {
+            gi.textContent = icon + ' ' + label;
+            gi.className = genre > 0.5 ? 'space-mode' : 'doom-mode';
+        }
+        const ds = document.getElementById('doom-status');
+        if (ds) ds.textContent = songName;
+    }
+
+    schedule() {
         if (!this.isPlaying) return;
+        const now = audioContext.currentTime;
+        if (this.scheduledUntil > now + this.lookAhead) return;
 
-        const lookAhead = 0.3;
+        const song = SONGS[this.currentSong];
+        const section = song.sections[this.currentSection];
+        const beatDur = 60.0 / section.bpm;
+        let t = this.scheduledUntil;
 
-        // Schedule guitar notes
-        while (this.nextNoteTime < this.synth.ctx.currentTime + lookAhead) {
-            this.scheduleNote();
+        // Schedule guitar riff
+        let guitarDur = 0;
+        section.guitar.forEach(note => {
+            const noteDuration = note.dur * beatDur;
+            this.guitar.playNote(note.f, t + guitarDur, noteDuration, note.pm || false, note.slide || false);
+            guitarDur += noteDuration;
+        });
+
+        // Schedule bass
+        let bassDur = 0;
+        section.bass.forEach(note => {
+            const noteDuration = note.dur * beatDur;
+            this.bass.playNote(note.f, t + bassDur, noteDuration);
+            bassDur += noteDuration;
+        });
+
+        // Schedule drums using pattern string
+        const patternDur = Math.max(guitarDur, bassDur);
+        const drumStr = section.drums.replace(/\|/g, '');
+        const stepDur = patternDur / drumStr.length;
+        for (let i = 0; i < drumStr.length; i++) {
+            const stepTime = t + i * stepDur;
+            const ch = drumStr[i];
+            if (ch === 'K') this.drums.kick(stepTime);
+            else if (ch === 'S') this.drums.snare(stepTime);
+            else if (ch === 'H') this.drums.hihat(stepTime);
+            else if (ch === 'O') this.drums.hihat(stepTime, true);
+            else if (ch === 'R') this.drums.ride(stepTime);
+            else if (ch === 'B') this.drums.ride(stepTime, true);
+            else if (ch === 'T') this.drums.tom(stepTime, 'high');
+            else if (ch === 'L') this.drums.tom(stepTime, 'low');
+            else if (ch === 'C') this.drums.crash(stepTime);
         }
 
-        // Schedule drum hits
-        while (this.nextDrumTime < this.synth.ctx.currentTime + lookAhead) {
-            this.scheduleDrum();
+        // Schedule pad for whole section
+        if (section.padChord && section.genre > 0.2) {
+            this.spaceSynth.playPad(section.padChord, t, patternDur);
         }
 
-        this.schedulerTimer = setTimeout(() => this.scheduleAhead(), 50);
-    }
-
-    scheduleNote() {
-        const riff = this.currentRiff;
-        const step = riff.pattern[this.currentStep];
-        const dur = step.dur * this.sixteenthDuration;
-
-        // Calculate riff phase (0-1)
-        const totalDur = riff.pattern.reduce((sum, s) => sum + s.dur, 0);
-        let stepsToHere = 0;
-        for (let i = 0; i < this.currentStep; i++) {
-            stepsToHere += riff.pattern[i].dur;
-        }
-        this.riffPhase = stepsToHere / totalDur;
-
-        this.synth.playNote(step.freq, this.nextNoteTime, dur * 0.93, step.pm || false);
-
-        this.nextNoteTime += dur;
-        this.currentStep++;
-
-        if (this.currentStep >= riff.pattern.length) {
-            this.currentStep = 0;
-            this.currentRepeat++;
-
-            if (this.currentRepeat >= riff.repeats) {
-                this.currentRepeat = 0;
-                this.nextRiff();
+        // Schedule arp on 16th notes
+        if (section.arp && section.genre > 0.5) {
+            const arpStepDur = beatDur * 0.25;
+            const arpLen = section.arp.length;
+            let arpTime = t;
+            let arpIdx = 0;
+            while (arpTime < t + patternDur) {
+                this.spaceSynth.playArpNote(section.arp[arpIdx % arpLen], arpTime, arpStepDur * 0.8);
+                arpTime += arpStepDur;
+                arpIdx++;
             }
         }
-    }
 
-    scheduleDrum() {
-        const riff = this.currentRiff;
-        const drumPattern = riff.drums || "";
+        // Riff flash for visuals
+        const flashDelay = Math.max(0, (t - now) * 1000);
+        setTimeout(() => { this.riffFlashVal = 1.0; }, flashDelay);
+        setTimeout(() => { this.riffFlashVal = 0; }, flashDelay + 150);
 
-        if (drumPattern.length === 0) {
-            // No drum pattern, advance silently
-            this.nextDrumTime += this.sixteenthDuration;
-            this.drumIndex++;
-            return;
+        this.scheduledUntil = t + patternDur;
+
+        // Advance repeat/section/song
+        this.currentRepeat++;
+        if (this.currentRepeat >= section.repeats) {
+            this.currentRepeat = 0;
+            this.currentSection++;
+            if (this.currentSection >= song.sections.length) {
+                this.currentSection = 0;
+                this.currentSong = (this.currentSong + 1) % SONGS.length;
+            }
+
+            // Schedule crash on section transitions
+            this.drums.crash(this.scheduledUntil);
+
+            // Apply next section after the transition
+            const transitionDelay = Math.max(0, (this.scheduledUntil - now) * 1000);
+            setTimeout(() => this.applySection(), transitionDelay);
         }
-
-        const idx = this.drumIndex % drumPattern.length;
-        const hit = drumPattern[idx];
-
-        if (hit !== '0') {
-            this.drums.playHit(hit, this.nextDrumTime);
-        }
-
-        this.nextDrumTime += this.sixteenthDuration;
-        this.drumIndex++;
-
-        // Reset drum index when pattern loops
-        if (this.drumIndex >= drumPattern.length) {
-            this.drumIndex = 0;
-        }
-    }
-
-    nextRiff() {
-        let next;
-        do {
-            next = Math.floor(Math.random() * RIFFS.length);
-        } while (next === this.currentRiffIndex && RIFFS.length > 1);
-
-        this.currentRiffIndex = next;
-        this.currentStep = 0;
-        this.drumIndex = 0;
-
-        riffTransitionFlash = 1.0;
-        if (isDoom > 0.5) {
-            currentMode = this.currentRiff.visualMode;
-        }
-        showRiffName(this.currentRiff.name, this.currentRiff.bpm);
-        console.log(`🦣 Riff: ${this.currentRiff.name} (${this.currentRiff.bpm} BPM)`);
     }
 }
 
-// Instances (created on demand)
-let doomSynth = null;
-let doomDrums = null;
-let riffSequencer = null;
 
-// ===== UI: RIFF NAME DISPLAY =====
-function showRiffName(name, bpm) {
-    const nameEl = document.getElementById('riff-name');
-    const statusEl = document.getElementById('doom-status');
-    const overlay = document.getElementById('doom-overlay');
+// ===== INSTANCES =====
+let guitar, bass, drums, spaceSynth, sequencer, mainBus;
+let isDoom = false;
 
-    if (!nameEl || !overlay) return;
-
-    nameEl.textContent = name;
-    nameEl.classList.remove('show');
-    void nameEl.offsetWidth;
-    nameEl.classList.add('show');
-
-    if (statusEl) {
-        statusEl.textContent = `⛧ MAMMOTH DOOM ⛧  ${bpm} BPM`;
+// ===== UI =====
+function showRiffName(name) {
+    const el = document.getElementById('riff-name');
+    if (el) {
+        el.textContent = name;
+        el.style.animation = 'none';
+        void el.offsetWidth;
+        el.style.animation = 'riffFade 4s ease-out forwards';
     }
 }
 
 // ===== INPUT STATE =====
-let mouseX = 0.5;
-let mouseY = 0.5;
-let currentMode = 0.0;
+let mouseX = 0.5, mouseY = 0.5;
+let currentMode = 0;
+const totalModes = 4;
 let isHyper = 0.0;
 let isWebcam = 0.0;
-let isDoom = 0.0;
-let isAutoPilot = 0.0;
-let autoPilotTimer = 0.0;
-const autoPilotChangeTime = 7.0;
-let riffTransitionFlash = 0.0;
+let smoothGenre = 0.0;
+let targetGenre = 0.0;
+let smoothBass = 0, smoothMid = 0, smoothHigh = 0;
+let currentPing = 0;
 
-let smoothBass = 0;
-let smoothMid = 0;
-let smoothHigh = 0;
-let smoothNoteOn = 0;
-let smoothNoteFreq = 0;
-let smoothKick = 0;
-let smoothSnare = 0;
+// ===== EVENT LISTENERS =====
+canvas.addEventListener('mousemove', (e) => {
+    mouseX = e.clientX / canvas.width;
+    mouseY = 1.0 - e.clientY / canvas.height;
+});
 
-function handleFirstInteraction() {
-    ensureAudioContext();
-    if (audioContext && audioContext.state === 'suspended') {
-        audioContext.resume();
+canvas.addEventListener('click', () => {
+    currentMode = (currentMode + 1) % totalModes;
+    initMic();
+});
+
+window.addEventListener('keydown', (e) => {
+    const key = e.key.toLowerCase();
+    if (key === 'd') {
+        ensureAudioContext();
+        if (!isDoom) {
+            isDoom = true;
+            mainBus = audioContext.createGain();
+            mainBus.gain.value = 0.7;
+
+            // Master compressor/limiter
+            const masterComp = audioContext.createDynamicsCompressor();
+            masterComp.threshold.value = -12;
+            masterComp.knee.value = 6;
+            masterComp.ratio.value = 8;
+            masterComp.attack.value = 0.003;
+            masterComp.release.value = 0.25;
+
+            mainBus.connect(masterComp);
+            masterComp.connect(audioContext.destination);
+            masterComp.connect(audioAnalyser);
+
+            guitar = new RealisticGuitar(audioContext, mainBus);
+            bass = new BassGuitar(audioContext, mainBus);
+            drums = new DoomDrums(audioContext, mainBus);
+            spaceSynth = new SpaceSynth(audioContext, mainBus);
+
+            sequencer = new SongSequencer(guitar, bass, drums, spaceSynth);
+            sequencer.start();
+
+            document.getElementById('doom-overlay').classList.add('active');
+            document.getElementById('doom-status').textContent = 'MONOLITH RISING';
+            const gi = document.getElementById('genre-indicator');
+            if (gi) { gi.textContent = '\uD83E\uDDA3 STONER DOOM'; gi.className = 'doom-mode'; }
+        } else {
+            isDoom = false;
+            if (sequencer) sequencer.stop();
+            if (guitar) guitar.fadeOut();
+            if (bass) bass.fadeOut();
+            if (spaceSynth) spaceSynth.fadeOut();
+            document.getElementById('doom-overlay').classList.remove('active');
+            document.getElementById('doom-status').textContent = 'PRESS D FOR DOOM';
+            const gi = document.getElementById('genre-indicator');
+            if (gi) gi.textContent = '';
+        }
     }
+    if (key === 'h') isHyper = isHyper > 0 ? 0.0 : 1.0;
+    if (key === 'w') {
+        if (!hasWebcamStarted) initWebcam();
+        else isWebcam = isWebcam > 0 ? 0.0 : 1.0;
+    }
+    if (key >= '1' && key <= '4') currentMode = parseInt(key) - 1;
+    if (key === 'm') initMic();
+});
+
+// ===== DISPLAY SHADER =====
+const displayVS = `
+    attribute vec4 aVertexPosition;
+    varying vec2 vUv;
+    void main() {
+        gl_Position = aVertexPosition;
+        vUv = aVertexPosition.xy * 0.5 + 0.5;
+    }
+`;
+
+const displayFS = `
+    precision mediump float;
+    varying vec2 vUv;
+    uniform sampler2D u_texture;
+    void main() {
+        gl_FragColor = texture2D(u_texture, vUv);
+    }
+`;
+
+const displayProgram = initShaderProgram(gl, displayVS, displayFS);
+const displayProgramInfo = {
+    program: displayProgram,
+    attribLocations: {
+        vertexPosition: gl.getAttribLocation(displayProgram, 'aVertexPosition'),
+    },
+    uniformLocations: {
+        texture: gl.getUniformLocation(displayProgram, 'u_texture'),
+    },
+};
+
+function drawTextureToScreen(texture) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+    gl.useProgram(displayProgramInfo.program);
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.enableVertexAttribArray(displayProgramInfo.attribLocations.vertexPosition);
+    gl.vertexAttribPointer(displayProgramInfo.attribLocations.vertexPosition, 2, gl.FLOAT, false, 0, 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.uniform1i(displayProgramInfo.uniformLocations.texture, 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
-document.body.addEventListener('click', () => {
-    handleFirstInteraction();
-    initMic();
-}, { once: true });
-
-document.body.addEventListener('keydown', () => {
-    handleFirstInteraction();
-}, { once: true });
-
-document.addEventListener('keydown', (e) => {
-    if (e.key === '1') currentMode = 0.0;
-    if (e.key === '2') currentMode = 1.0;
-    if (e.key === '3') currentMode = 2.0;
-    if (e.key === '4') currentMode = 3.0;
-
-    if (e.key === 'w' || e.key === 'W') {
-        if (!hasWebcamStarted) {
-            initWebcam();
-        } else {
-            isWebcam = (isWebcam > 0.5) ? 0.0 : 1.0;
-        }
-    }
-
-    if (e.key === 'a' || e.key === 'A') {
-        isAutoPilot = (isAutoPilot > 0.5) ? 0.0 : 1.0;
-    }
-
-    // ===== DOOM MODE TOGGLE (D) =====
-    if (e.key === 'd' || e.key === 'D') {
-        ensureAudioContext();
-        if (audioContext.state === 'suspended') {
-            audioContext.resume();
-        }
-
-        if (isDoom < 0.5) {
-            isDoom = 1.0;
-            document.body.classList.add('active');
-            document.body.classList.add('doom-active');
-
-            if (!doomSynth) {
-                doomSynth = new DoomSynth(audioContext, audioAnalyser);
-                doomDrums = new DoomDrums(audioContext, audioAnalyser);
-                riffSequencer = new RiffSequencer(doomSynth, doomDrums);
-            }
-            riffSequencer.start();
-
-            const overlay = document.getElementById('doom-overlay');
-            if (overlay) overlay.classList.add('active');
-
-            console.log("🦣 MAMMOTH DOOM ACTIVATED 🦣");
-        } else {
-            isDoom = 0.0;
-            document.body.classList.remove('doom-active');
-
-            if (riffSequencer) riffSequencer.stop();
-
-            const overlay = document.getElementById('doom-overlay');
-            if (overlay) overlay.classList.remove('active');
-
-            console.log("Doom mode off");
-        }
-    }
-
-    if (e.key === 'f' || e.key === 'F') {
-        if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen();
-        } else {
-            if (document.exitFullscreen) document.exitFullscreen();
-        }
-    }
-});
-
-document.addEventListener('mousedown', () => isHyper = 1.0);
-document.addEventListener('mouseup', () => isHyper = 0.0);
-document.addEventListener('touchstart', () => isHyper = 1.0);
-document.addEventListener('touchend', () => isHyper = 0.0);
-
-document.addEventListener('mousemove', (e) => {
-    mouseX = e.clientX / window.innerWidth;
-    mouseY = 1.0 - (e.clientY / window.innerHeight);
-});
-
-document.addEventListener('touchmove', (e) => {
-    if (e.touches.length > 0) {
-        mouseX = e.touches[0].clientX / window.innerWidth;
-        mouseY = 1.0 - (e.touches[0].clientY / window.innerHeight);
-    }
-}, { passive: false });
-
 // ===== RENDER LOOP =====
-function render(now) {
-    now *= 0.001;
+let startTime = performance.now() / 1000;
 
-    if (isAutoPilot > 0.5 && isDoom < 0.5) {
-        if (now - autoPilotTimer > autoPilotChangeTime) {
-            currentMode = (currentMode + 1.0) % 4.0;
-            autoPilotTimer = now;
-        }
-    }
+function render() {
+    requestAnimationFrame(render);
 
-    // ===== FREQUENCY BAND ANALYSIS =====
-    let audioValue = 0;
-    let rawBass = 0;
-    let rawMid = 0;
-    let rawHigh = 0;
+    const time = performance.now() / 1000 - startTime;
 
-    if (audioAnalyser && audioDataArray) {
-        audioAnalyser.getByteFrequencyData(audioDataArray);
-        const len = audioDataArray.length;
-
-        let sum = 0;
-        for (let i = 0; i < len / 4; i++) sum += audioDataArray[i];
-        audioValue = sum / (len / 4 * 255);
-        audioValue = Math.pow(audioValue, 2.0) * 2.0;
-
-        let bassSum = 0;
-        for (let i = 0; i < 4; i++) bassSum += audioDataArray[i];
-        rawBass = bassSum / (4 * 255);
-        rawBass = Math.pow(rawBass, 1.5) * 2.5;
-
-        let midSum = 0;
-        for (let i = 4; i < 20; i++) midSum += audioDataArray[i];
-        rawMid = midSum / (16 * 255);
-        rawMid = Math.pow(rawMid, 1.5) * 2.0;
-
-        let highSum = 0;
-        for (let i = 20; i < 64; i++) highSum += audioDataArray[i];
-        rawHigh = highSum / (44 * 255);
-        rawHigh = Math.pow(rawHigh, 1.5) * 2.0;
-    }
-
-    smoothBass += (rawBass - smoothBass) * 0.25;
-    smoothMid += (rawMid - smoothMid) * 0.2;
-    smoothHigh += (rawHigh - smoothHigh) * 0.2;
-
-    const targetNoteOn = doomSynth ? doomSynth.noteOnValue : 0;
-    const targetFreq = doomSynth ? doomSynth.currentFreq : 0;
-    smoothNoteOn += (targetNoteOn - smoothNoteOn) * 0.15;
-    const normalizedFreq = targetFreq > 0 ? Math.max(0, Math.min(1, (targetFreq - 36.71) / 110.12)) : smoothNoteFreq;
-    smoothNoteFreq += (normalizedFreq - smoothNoteFreq) * 0.1;
-
-    // Kick and snare visual tracking with fast attack, slow decay
-    const rawKick = doomDrums ? doomDrums.kickValue : 0;
-    const rawSnare = doomDrums ? doomDrums.snareValue : 0;
-
-    if (rawKick > smoothKick) {
-        smoothKick += (rawKick - smoothKick) * 0.7; // Fast attack
-    } else {
-        smoothKick *= 0.92; // Slow decay - mammoth weight lingers
-    }
-
-    if (rawSnare > smoothSnare) {
-        smoothSnare += (rawSnare - smoothSnare) * 0.8;
-    } else {
-        smoothSnare *= 0.88;
-    }
-
-    // Reset trigger values after reading
-    if (doomDrums) {
-        doomDrums.kickValue *= 0.85;
-        doomDrums.snareValue *= 0.8;
-    }
-
-    riffTransitionFlash *= 0.94;
-
-    const riffPhase = riffSequencer ? riffSequencer.riffPhase : 0;
-
-    // ===== RENDERING =====
-    resizeCanvasToDisplaySize(gl.canvas);
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
     resizeFramebuffers();
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fboA);
-    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-    gl.clearColor(0.0, 0.0, 0.0, 1.0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.useProgram(programInfo.program);
+    // Audio analysis
+    let audioLevel = 0, bassLevel = 0, midLevel = 0, highLevel = 0;
+    if (audioAnalyser && audioDataArray) {
+        audioAnalyser.getByteFrequencyData(audioDataArray);
+        const total = audioDataArray.length;
+        let sum = 0;
+        for (let i = 0; i < total; i++) sum += audioDataArray[i];
+        audioLevel = sum / (total * 255);
 
-    if (hasWebcamStarted && isWebcam > 0.5) {
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, webcamTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, webcamVideo);
-        gl.uniform1i(programInfo.uniformLocations.webcam, 0);
-        gl.uniform1f(programInfo.uniformLocations.webcamEnabled, 1.0);
-    } else {
-        gl.uniform1f(programInfo.uniformLocations.webcamEnabled, 0.0);
+        const third = Math.floor(total / 3);
+        let bSum = 0, mSum = 0, hSum = 0;
+        for (let i = 0; i < third; i++) bSum += audioDataArray[i];
+        for (let i = third; i < third * 2; i++) mSum += audioDataArray[i];
+        for (let i = third * 2; i < total; i++) hSum += audioDataArray[i];
+        bassLevel = bSum / (third * 255);
+        midLevel = mSum / (third * 255);
+        highLevel = hSum / (third * 255);
     }
 
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, textureB);
-    gl.uniform1i(programInfo.uniformLocations.prevFrame, 1);
+    smoothBass += (bassLevel - smoothBass) * 0.15;
+    smoothMid += (midLevel - smoothMid) * 0.15;
+    smoothHigh += (highLevel - smoothHigh) * 0.15;
+
+    // Smooth genre transition
+    if (sequencer && sequencer.isPlaying) {
+        targetGenre = sequencer.targetGenre;
+    }
+    smoothGenre += (targetGenre - smoothGenre) * 0.02;
+
+    // Render to framebuffer
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboA);
+    gl.viewport(0, 0, canvasWidth, canvasHeight);
+    gl.useProgram(programInfo.program);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    gl.vertexAttribPointer(programInfo.attribLocations.vertexPosition, 2, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition);
+    gl.vertexAttribPointer(programInfo.attribLocations.vertexPosition, 2, gl.FLOAT, false, 0, 0);
 
-    gl.uniform2f(programInfo.uniformLocations.resolution, gl.canvas.width, gl.canvas.height);
-    gl.uniform1f(programInfo.uniformLocations.time, now);
+    // Uniforms
+    gl.uniform2f(programInfo.uniformLocations.resolution, canvasWidth, canvasHeight);
+    gl.uniform1f(programInfo.uniformLocations.time, time);
     gl.uniform2f(programInfo.uniformLocations.mouse, mouseX, mouseY);
-    gl.uniform1f(programInfo.uniformLocations.audio, audioValue);
+    gl.uniform1f(programInfo.uniformLocations.audio, audioLevel);
     gl.uniform1f(programInfo.uniformLocations.mode, currentMode);
     gl.uniform1f(programInfo.uniformLocations.hyper, isHyper);
+    gl.uniform1f(programInfo.uniformLocations.doomMode, isDoom ? 1.0 : 0.0);
+    gl.uniform1f(programInfo.uniformLocations.genre, smoothGenre);
 
+    // Guitar visual data
+    let noteFreq = 0, noteOn = 0, riffFlash = 0, kickVal = 0, snareVal = 0;
+    if (guitar) { noteFreq = guitar.currentFreq; noteOn = guitar.noteOnValue; }
+    if (sequencer) riffFlash = sequencer.riffFlashVal;
+    if (drums) { kickVal = drums.kickVal; snareVal = drums.snareVal; }
+
+    gl.uniform1f(programInfo.uniformLocations.riffPhase, time * 0.3);
+    gl.uniform1f(programInfo.uniformLocations.noteFreq, noteFreq);
+    gl.uniform1f(programInfo.uniformLocations.noteOn, noteOn);
+    gl.uniform1f(programInfo.uniformLocations.riffFlash, riffFlash);
+    gl.uniform1f(programInfo.uniformLocations.kick, kickVal);
+    gl.uniform1f(programInfo.uniformLocations.snare, snareVal);
     gl.uniform1f(programInfo.uniformLocations.bass, smoothBass);
     gl.uniform1f(programInfo.uniformLocations.mid, smoothMid);
     gl.uniform1f(programInfo.uniformLocations.high, smoothHigh);
-    gl.uniform1f(programInfo.uniformLocations.doomMode, isDoom);
-    gl.uniform1f(programInfo.uniformLocations.riffPhase, riffPhase);
-    gl.uniform1f(programInfo.uniformLocations.noteFreq, smoothNoteFreq);
-    gl.uniform1f(programInfo.uniformLocations.noteOn, smoothNoteOn);
-    gl.uniform1f(programInfo.uniformLocations.riffFlash, riffTransitionFlash);
-    gl.uniform1f(programInfo.uniformLocations.kick, smoothKick);
-    gl.uniform1f(programInfo.uniformLocations.snare, smoothSnare);
+
+    // Previous frame
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, textureB);
+    gl.uniform1i(programInfo.uniformLocations.prevFrame, 0);
+
+    // Webcam
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, webcamTexture);
+    if (hasWebcamStarted && webcamVideo.readyState >= 2) {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, webcamVideo);
+    }
+    gl.uniform1i(programInfo.uniformLocations.webcam, 1);
+    gl.uniform1f(programInfo.uniformLocations.webcamEnabled, isWebcam);
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-    let tempTex = textureA;
+    // Display
+    drawTextureToScreen(textureA);
+
+    // Ping pong
+    const tempTex = textureA;
     textureA = textureB;
     textureB = tempTex;
-
-    let tempFbo = fboA;
+    const tempFbo = fboA;
     fboA = fboB;
     fboB = tempFbo;
-
-    drawTextureToScreen(textureB);
-
-    requestAnimationFrame(render);
 }
 
-// ===== DISPLAY SHADER =====
-const vsDisplay = `
-attribute vec4 aVertexPosition;
-varying vec2 vUv;
-void main() {
-    gl_Position = aVertexPosition;
-    vUv = aVertexPosition.xy * 0.5 + 0.5;
-}
-`;
-const fsDisplay = `
-precision mediump float;
-uniform sampler2D u_texture;
-varying vec2 vUv;
-void main() {
-    gl_FragColor = texture2D(u_texture, vUv);
-}
-`;
-
-const displayProgram = initShaderProgram(gl, vsDisplay, fsDisplay);
-const displayLocs = {
-    pos: gl.getAttribLocation(displayProgram, 'aVertexPosition'),
-    tex: gl.getUniformLocation(displayProgram, 'u_texture'),
-};
-
-function drawTextureToScreen(tex) {
-    gl.useProgram(displayProgram);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.uniform1i(displayLocs.tex, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    gl.vertexAttribPointer(displayLocs.pos, 2, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(displayLocs.pos);
-
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-}
-
-function resizeCanvasToDisplaySize(canvas) {
-    const displayWidth = canvas.clientWidth;
-    const displayHeight = canvas.clientHeight;
-    if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-        canvas.width = displayWidth;
-        canvas.height = displayHeight;
-    }
-}
-
-requestAnimationFrame(render);
+render();
