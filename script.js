@@ -589,44 +589,44 @@ class RealisticGuitar {
         this.inputGain = ctx.createGain();
         this.inputGain.gain.value = 0.6;
 
-        // Preamp tube saturation — cranked for metal punch
+        // Preamp tube saturation — warm crunch, less aggressive
         this.preampDrive = ctx.createWaveShaper();
-        this.preampDrive.curve = this._tubeSaturation(8.0);
+        this.preampDrive.curve = this._tubeSaturation(5.5);
         this.preampDrive.oversample = '4x';
 
         this.preampDrive2 = ctx.createWaveShaper();
-        this.preampDrive2.curve = this._tubeSaturation(4.5);
+        this.preampDrive2.curve = this._tubeSaturation(3.0);
         this.preampDrive2.oversample = '4x';
 
-        // Tone stack EQ — aggressive metal voicing
+        // Tone stack EQ — balanced voicing
         this.tsBass = ctx.createBiquadFilter();
         this.tsBass.type = 'lowshelf';
         this.tsBass.frequency.value = 220;
-        this.tsBass.gain.value = 5;
+        this.tsBass.gain.value = 3;
 
         this.tsMid = ctx.createBiquadFilter();
         this.tsMid.type = 'peaking';
         this.tsMid.frequency.value = 800;
         this.tsMid.Q.value = 1.4;
-        this.tsMid.gain.value = -1;
+        this.tsMid.gain.value = 0;
 
         this.tsTreble = ctx.createBiquadFilter();
         this.tsTreble.type = 'highshelf';
         this.tsTreble.frequency.value = 3500;
-        this.tsTreble.gain.value = -5;
+        this.tsTreble.gain.value = -3;
 
         this.presence = ctx.createBiquadFilter();
         this.presence.type = 'peaking';
         this.presence.frequency.value = 2200;
         this.presence.Q.value = 2.0;
-        this.presence.gain.value = 4;
+        this.presence.gain.value = 3;
 
-        // Upper mid aggression — adds snarl and cut
+        // Upper mid clarity
         this.upperMidPush = ctx.createBiquadFilter();
         this.upperMidPush.type = 'peaking';
         this.upperMidPush.frequency.value = 1600;
         this.upperMidPush.Q.value = 1.8;
-        this.upperMidPush.gain.value = 3;
+        this.upperMidPush.gain.value = 2;
 
         // Cabinet simulation — tight and punchy 4x12
         this.cabLP = ctx.createBiquadFilter();
@@ -643,13 +643,13 @@ class RealisticGuitar {
         this.cabResonance.type = 'peaking';
         this.cabResonance.frequency.value = 2800;
         this.cabResonance.Q.value = 3.0;
-        this.cabResonance.gain.value = 6;
+        this.cabResonance.gain.value = 4;
 
         this.cabBody = ctx.createBiquadFilter();
         this.cabBody.type = 'peaking';
         this.cabBody.frequency.value = 400;
         this.cabBody.Q.value = 1.5;
-        this.cabBody.gain.value = 5;
+        this.cabBody.gain.value = 3;
 
         // Power amp compression — tight and aggressive
         this.powerComp = ctx.createDynamicsCompressor();
@@ -687,7 +687,7 @@ class RealisticGuitar {
         this.delayWet.gain.value = 0.08;
 
         this.masterGain = ctx.createGain();
-        this.masterGain.gain.value = 0.22;
+        this.masterGain.gain.value = 0.18;
 
         // Wah-wah filter (peaking, inline — transparent when off)
         this.wahFilter = ctx.createBiquadFilter();
@@ -787,40 +787,40 @@ class RealisticGuitar {
         noteGain.gain.linearRampToValueAtTime(0.0001, startTime + duration);
 
         const oscs = [];
-        // 6 detuned sawtooth oscillators for massive wall of sound
+        // 6 detuned sawtooth oscillators for thick wall of sound
         [-6, 6, -14, 14, -22, 22].forEach((det, idx) => {
             const osc = this.ctx.createOscillator();
             osc.type = 'sawtooth';
             osc.frequency.value = freq;
             osc.detune.value = det;
-            oscs.push({ osc, gain: idx < 2 ? 0.18 : idx < 4 ? 0.10 : 0.05 });
+            oscs.push({ osc, gain: idx < 2 ? 0.14 : idx < 4 ? 0.07 : 0.03 });
         });
 
-        // Power chord fifth — beefier
+        // Power chord fifth
         const fifthOsc = this.ctx.createOscillator();
         fifthOsc.type = 'sawtooth';
         fifthOsc.frequency.value = freq * 1.5;
         fifthOsc.detune.value = 4;
-        oscs.push({ osc: fifthOsc, gain: 0.14 });
+        oscs.push({ osc: fifthOsc, gain: 0.10 });
 
         // Doubled fifth with slight detune for width
         const fifthOsc2 = this.ctx.createOscillator();
         fifthOsc2.type = 'sawtooth';
         fifthOsc2.frequency.value = freq * 1.5;
         fifthOsc2.detune.value = -8;
-        oscs.push({ osc: fifthOsc2, gain: 0.08 });
+        oscs.push({ osc: fifthOsc2, gain: 0.06 });
 
-        // Sub octave — heavier
+        // Sub octave
         const subOsc = this.ctx.createOscillator();
         subOsc.type = 'sawtooth';
         subOsc.frequency.value = freq * 0.5;
-        oscs.push({ osc: subOsc, gain: 0.22 });
+        oscs.push({ osc: subOsc, gain: 0.16 });
 
-        // 2nd harmonic sweetener — hotter
+        // 2nd harmonic sweetener
         const harmOsc = this.ctx.createOscillator();
         harmOsc.type = 'sine';
         harmOsc.frequency.value = freq * 2;
-        oscs.push({ osc: harmOsc, gain: 0.06 });
+        oscs.push({ osc: harmOsc, gain: 0.05 });
 
         // Pick transient — hotter for more attack bite
         const pickDur = 0.025;
@@ -907,17 +907,17 @@ class RealisticGuitar {
     }
 
     setDoomTone() {
-        this.tsBass.gain.value = 6;
-        this.tsMid.gain.value = -1;
-        this.tsTreble.gain.value = -7;
-        this.cabLP.frequency.value = 3800;
-        this.preampDrive.curve = this._tubeSaturation(9.0);
-        this.preampDrive2.curve = this._tubeSaturation(5.0);
+        this.tsBass.gain.value = 4;
+        this.tsMid.gain.value = 0;
+        this.tsTreble.gain.value = -5;
+        this.cabLP.frequency.value = 4000;
+        this.preampDrive.curve = this._tubeSaturation(6.5);
+        this.preampDrive2.curve = this._tubeSaturation(3.5);
         this.delay.delayTime.value = 0.45;
         this.delayFB.gain.value = 0.18;
         this.delayWet.gain.value = 0.06;
         this.reverbWet.gain.value = 0.1;
-        this.masterGain.gain.value = 0.22;
+        this.masterGain.gain.value = 0.18;
     }
 
     setSpaceTone() {
@@ -933,18 +933,18 @@ class RealisticGuitar {
     }
 
     setSleepTone() {
-        // Matt Pike's massive wall-of-fuzz tone
-        this.tsBass.gain.value = 8;
+        // Matt Pike's wall-of-fuzz tone — pulled back for clarity
+        this.tsBass.gain.value = 6;
         this.tsMid.gain.value = 1;
-        this.tsTreble.gain.value = -8;
-        this.cabLP.frequency.value = 3200;
-        this.preampDrive.curve = this._tubeSaturation(11.0);
-        this.preampDrive2.curve = this._tubeSaturation(6.0);
+        this.tsTreble.gain.value = -6;
+        this.cabLP.frequency.value = 3500;
+        this.preampDrive.curve = this._tubeSaturation(8.0);
+        this.preampDrive2.curve = this._tubeSaturation(4.0);
         this.delay.delayTime.value = 0.35;
         this.delayFB.gain.value = 0.1;
         this.delayWet.gain.value = 0.03;
         this.reverbWet.gain.value = 0.06;
-        this.masterGain.gain.value = 0.24;
+        this.masterGain.gain.value = 0.20;
     }
 
     setOmCleanTone() {
@@ -977,21 +977,21 @@ class RealisticGuitar {
         }
         this.preampDrive.curve = curve;
         // Second stage: softer saturation to round out the harsh edges
-        this.preampDrive2.curve = this._tubeSaturation(5.0);
+        this.preampDrive2.curve = this._tubeSaturation(3.5);
         // Scooped mids, boosted bass & presence for that velcro fuzz character
-        this.tsBass.gain.value = 8;
-        this.tsMid.gain.value = -4;
-        this.tsTreble.gain.value = -5;
-        this.presence.gain.value = 6;
-        this.cabLP.frequency.value = 3600;
+        this.tsBass.gain.value = 6;
+        this.tsMid.gain.value = -3;
+        this.tsTreble.gain.value = -4;
+        this.presence.gain.value = 5;
+        this.cabLP.frequency.value = 3800;
         this.cabHP.frequency.value = 90;
-        this.cabResonance.gain.value = 7;
+        this.cabResonance.gain.value = 5;
         // Minimal delay, some reverb for space
         this.delay.delayTime.value = 0.30;
         this.delayFB.gain.value = 0.08;
         this.delayWet.gain.value = 0.03;
         this.reverbWet.gain.value = 0.08;
-        this.masterGain.gain.value = 0.24;
+        this.masterGain.gain.value = 0.20;
     }
 
     fadeOut() { this.masterGain.gain.linearRampToValueAtTime(0.0001, this.ctx.currentTime + 0.5); }
@@ -1016,19 +1016,306 @@ class RealisticGuitar {
     }
 
     set70sTone() {
-        // Warm crunchy 70s tone — pushed hard like Iommi
-        this.tsBass.gain.value = 5;
-        this.tsMid.gain.value = 3;
-        this.tsTreble.gain.value = -3;
+        // Warm crunchy 70s tone — Iommi-inspired
+        this.tsBass.gain.value = 4;
+        this.tsMid.gain.value = 2;
+        this.tsTreble.gain.value = -2;
         this.cabLP.frequency.value = 4800;
-        this.preampDrive.curve = this._tubeSaturation(6.0);
-        this.preampDrive2.curve = this._tubeSaturation(3.5);
+        this.preampDrive.curve = this._tubeSaturation(5.0);
+        this.preampDrive2.curve = this._tubeSaturation(3.0);
         this.delay.delayTime.value = 0.40;
         this.delayFB.gain.value = 0.15;
         this.delayWet.gain.value = 0.05;
         this.reverbWet.gain.value = 0.12;
-        this.masterGain.gain.value = 0.22;
+        this.masterGain.gain.value = 0.18;
         this.disableWah();
+    }
+}
+
+
+// =====================================================
+// ===== CLEAN LEAD GUITAR (Crystal Melodic Riffs) ====
+// =====================================================
+
+class CleanLeadGuitar {
+    constructor(ctx, dest) {
+        this.ctx = ctx;
+
+        // Stereo chorus for shimmer and width
+        this.chorusDelay = ctx.createDelay(0.05);
+        this.chorusDelay.delayTime.value = 0.012;
+        this.chorusLFO = ctx.createOscillator();
+        this.chorusLFO.type = 'sine';
+        this.chorusLFO.frequency.value = 1.2;
+        this.chorusLFO.start();
+        this.chorusDepth = ctx.createGain();
+        this.chorusDepth.gain.value = 0.003;
+        this.chorusLFO.connect(this.chorusDepth);
+        this.chorusDepth.connect(this.chorusDelay.delayTime);
+
+        // Second chorus voice for richer shimmer
+        this.chorusDelay2 = ctx.createDelay(0.05);
+        this.chorusDelay2.delayTime.value = 0.018;
+        this.chorusLFO2 = ctx.createOscillator();
+        this.chorusLFO2.type = 'sine';
+        this.chorusLFO2.frequency.value = 0.8;
+        this.chorusLFO2.start();
+        this.chorusDepth2 = ctx.createGain();
+        this.chorusDepth2.gain.value = 0.004;
+        this.chorusLFO2.connect(this.chorusDepth2);
+        this.chorusDepth2.connect(this.chorusDelay2.delayTime);
+
+        // Clean EQ — bright, glassy, airy
+        this.bassRolloff = ctx.createBiquadFilter();
+        this.bassRolloff.type = 'highpass';
+        this.bassRolloff.frequency.value = 180;
+        this.bassRolloff.Q.value = 0.7;
+
+        this.presence = ctx.createBiquadFilter();
+        this.presence.type = 'peaking';
+        this.presence.frequency.value = 3200;
+        this.presence.Q.value = 1.2;
+        this.presence.gain.value = 4;
+
+        this.airShelf = ctx.createBiquadFilter();
+        this.airShelf.type = 'highshelf';
+        this.airShelf.frequency.value = 6000;
+        this.airShelf.gain.value = 3;
+
+        this.bodyWarmth = ctx.createBiquadFilter();
+        this.bodyWarmth.type = 'peaking';
+        this.bodyWarmth.frequency.value = 800;
+        this.bodyWarmth.Q.value = 0.8;
+        this.bodyWarmth.gain.value = 2;
+
+        // Gentle compression for sustain without squash
+        this.comp = ctx.createDynamicsCompressor();
+        this.comp.threshold.value = -18;
+        this.comp.knee.value = 12;
+        this.comp.ratio.value = 3;
+        this.comp.attack.value = 0.008;
+        this.comp.release.value = 0.15;
+
+        // Stereo ping-pong delay
+        this.delay = ctx.createDelay(2.0);
+        this.delay.delayTime.value = 0.375;
+        this.delayFB = ctx.createGain();
+        this.delayFB.gain.value = 0.32;
+        this.delayLP = ctx.createBiquadFilter();
+        this.delayLP.type = 'lowpass';
+        this.delayLP.frequency.value = 5000;
+        this.delayWet = ctx.createGain();
+        this.delayWet.gain.value = 0.22;
+
+        // Second delay tap for depth
+        this.delay2 = ctx.createDelay(2.0);
+        this.delay2.delayTime.value = 0.5;
+        this.delayFB2 = ctx.createGain();
+        this.delayFB2.gain.value = 0.22;
+        this.delayWet2 = ctx.createGain();
+        this.delayWet2.gain.value = 0.14;
+
+        // Plate reverb (longer, lush)
+        this.reverbDelay1 = ctx.createDelay(0.2);
+        this.reverbDelay1.delayTime.value = 0.029;
+        this.reverbDelay2 = ctx.createDelay(0.2);
+        this.reverbDelay2.delayTime.value = 0.047;
+        this.reverbDelay3 = ctx.createDelay(0.2);
+        this.reverbDelay3.delayTime.value = 0.067;
+        this.reverbDelay4 = ctx.createDelay(0.2);
+        this.reverbDelay4.delayTime.value = 0.083;
+        this.reverbFB1 = ctx.createGain(); this.reverbFB1.gain.value = 0.45;
+        this.reverbFB2 = ctx.createGain(); this.reverbFB2.gain.value = 0.40;
+        this.reverbFB3 = ctx.createGain(); this.reverbFB3.gain.value = 0.35;
+        this.reverbFB4 = ctx.createGain(); this.reverbFB4.gain.value = 0.30;
+        this.reverbLP = ctx.createBiquadFilter();
+        this.reverbLP.type = 'lowpass';
+        this.reverbLP.frequency.value = 6000;
+        this.reverbWet = ctx.createGain();
+        this.reverbWet.gain.value = 0.25;
+
+        this.masterGain = ctx.createGain();
+        this.masterGain.gain.value = 0.0;
+
+        // Input gain for killAllNotes signal-path severing
+        this.inputGain = ctx.createGain();
+        this.inputGain.gain.value = 1.0;
+
+        // Wire signal chain: input → EQ → comp → chorus → delays → reverb → master
+        this.inputGain.connect(this.bassRolloff);
+        this.bassRolloff.connect(this.bodyWarmth);
+        this.bodyWarmth.connect(this.presence);
+        this.presence.connect(this.airShelf);
+        this.airShelf.connect(this.comp);
+
+        // Dry + chorus mix
+        this.comp.connect(this.masterGain); // dry path
+        this.comp.connect(this.chorusDelay);
+        this.chorusDelay.connect(this.masterGain);
+        this.comp.connect(this.chorusDelay2);
+        this.chorusDelay2.connect(this.masterGain);
+
+        // Delay 1
+        this.comp.connect(this.delay);
+        this.delay.connect(this.delayLP);
+        this.delayLP.connect(this.delayFB);
+        this.delayFB.connect(this.delay);
+        this.delayLP.connect(this.delayWet);
+        this.delayWet.connect(this.masterGain);
+
+        // Delay 2 (cascaded from delay 1)
+        this.delayLP.connect(this.delay2);
+        this.delay2.connect(this.delayFB2);
+        this.delayFB2.connect(this.delay2);
+        this.delay2.connect(this.delayWet2);
+        this.delayWet2.connect(this.masterGain);
+
+        // Plate reverb
+        [this.reverbDelay1, this.reverbDelay2, this.reverbDelay3, this.reverbDelay4].forEach((d, i) => {
+            this.comp.connect(d);
+            const fb = [this.reverbFB1, this.reverbFB2, this.reverbFB3, this.reverbFB4][i];
+            d.connect(fb); fb.connect(d);
+            d.connect(this.reverbLP);
+        });
+        this.reverbLP.connect(this.reverbWet);
+        this.reverbWet.connect(this.masterGain);
+
+        this.masterGain.connect(dest);
+        this.currentFreq = 0;
+    }
+
+    playNote(freq, startTime, duration, slide = false) {
+        if (freq <= 0) return;
+
+        const noteGain = this.ctx.createGain();
+        const attack = 0.008;
+        const decay = 0.04;
+        const sustainLevel = 0.14;
+        const release = Math.min(0.15, duration * 0.3);
+        const sustainTime = Math.max(0.01, duration - attack - decay - release);
+
+        noteGain.gain.setValueAtTime(0.0001, startTime);
+        noteGain.gain.linearRampToValueAtTime(sustainLevel * 1.2, startTime + attack);
+        noteGain.gain.exponentialRampToValueAtTime(Math.max(sustainLevel, 0.001), startTime + attack + decay);
+        noteGain.gain.setValueAtTime(sustainLevel, startTime + Math.max(attack + decay, duration - release));
+        noteGain.gain.linearRampToValueAtTime(0.0001, startTime + duration);
+
+        // Clean triangle oscillator — warm fundamental
+        const tri = this.ctx.createOscillator();
+        tri.type = 'triangle';
+        tri.frequency.value = freq;
+        const triG = this.ctx.createGain();
+        triG.gain.value = 0.35;
+        tri.connect(triG);
+        triG.connect(noteGain);
+
+        // Sine for pure bell-like clarity
+        const sine = this.ctx.createOscillator();
+        sine.type = 'sine';
+        sine.frequency.value = freq;
+        sine.detune.value = 3;
+        const sineG = this.ctx.createGain();
+        sineG.gain.value = 0.30;
+        sine.connect(sineG);
+        sineG.connect(noteGain);
+
+        // Shimmer octave (sine, very quiet for sparkle)
+        const shimmer = this.ctx.createOscillator();
+        shimmer.type = 'sine';
+        shimmer.frequency.value = freq * 2;
+        shimmer.detune.value = -5;
+        const shimmerG = this.ctx.createGain();
+        shimmerG.gain.value = 0.06;
+        shimmer.connect(shimmerG);
+        shimmerG.connect(noteGain);
+
+        // Soft pick transient — gentle attack click
+        const pickDur = 0.015;
+        const pickBuf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * pickDur), this.ctx.sampleRate);
+        const pd = pickBuf.getChannelData(0);
+        for (let i = 0; i < pd.length; i++) pd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (pd.length * 0.03));
+        const pickSrc = this.ctx.createBufferSource();
+        pickSrc.buffer = pickBuf;
+        const pickGain = this.ctx.createGain();
+        pickGain.gain.value = 0.06;
+        const pickFilter = this.ctx.createBiquadFilter();
+        pickFilter.type = 'bandpass';
+        pickFilter.frequency.value = freq * 4;
+        pickFilter.Q.value = 1.0;
+        pickSrc.connect(pickFilter);
+        pickFilter.connect(pickGain);
+        pickGain.connect(noteGain);
+
+        noteGain.connect(this.inputGain);
+
+        // Vibrato with delayed onset
+        if (duration > 0.4) {
+            const vibLFO = this.ctx.createOscillator();
+            vibLFO.type = 'sine';
+            vibLFO.frequency.value = 5.0 + Math.random() * 1.0;
+            const vibGain = this.ctx.createGain();
+            const vibDelay = Math.min(duration * 0.4, 0.4);
+            const vibPeak = Math.min(duration * 0.75, 1.0);
+            vibGain.gain.setValueAtTime(0, startTime);
+            vibGain.gain.linearRampToValueAtTime(0, startTime + vibDelay);
+            vibGain.gain.linearRampToValueAtTime(freq * 0.004, startTime + vibPeak);
+            vibLFO.connect(vibGain);
+            vibGain.connect(tri.frequency);
+            vibGain.connect(sine.frequency);
+            vibLFO.start(startTime);
+            vibLFO.stop(startTime + duration + 0.05);
+        }
+
+        const stopTime = startTime + duration + 0.05;
+        if (slide && this.currentFreq > 0) {
+            [tri, sine, shimmer].forEach(osc => {
+                osc.frequency.setValueAtTime(this.currentFreq, startTime);
+                osc.frequency.linearRampToValueAtTime(freq, startTime + 0.04);
+            });
+            shimmer.frequency.setValueAtTime(this.currentFreq * 2, startTime);
+            shimmer.frequency.linearRampToValueAtTime(freq * 2, startTime + 0.04);
+        }
+
+        tri.start(startTime); tri.stop(stopTime);
+        sine.start(startTime); sine.stop(stopTime);
+        shimmer.start(startTime); shimmer.stop(stopTime);
+        pickSrc.start(startTime);
+
+        this.currentFreq = freq;
+
+        setTimeout(() => {
+            [tri, sine, shimmer].forEach(o => { try { o.disconnect(); } catch(e){} });
+            try { noteGain.disconnect(); pickSrc.disconnect(); } catch(e){}
+        }, (stopTime - this.ctx.currentTime) * 1000 + 300);
+    }
+
+    killAllNotes() {
+        const old = this.inputGain;
+        this.inputGain = this.ctx.createGain();
+        this.inputGain.gain.value = 1.0;
+        this.inputGain.connect(this.bassRolloff);
+        try {
+            old.gain.setValueAtTime(old.gain.value, this.ctx.currentTime);
+            old.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.015);
+        } catch(e) {}
+        setTimeout(() => { try { old.disconnect(); } catch(e) {} }, 100);
+    }
+
+    fadeIn(time = 2.0) {
+        this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+        this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
+        this.masterGain.gain.linearRampToValueAtTime(0.38, this.ctx.currentTime + time);
+    }
+
+    fadeOut(time = 2.0) {
+        this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+        this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
+        this.masterGain.gain.linearRampToValueAtTime(0.0001, this.ctx.currentTime + time);
+    }
+
+    setDelay(time, feedback) {
+        this.delay.delayTime.value = time;
+        this.delayFB.gain.value = feedback;
     }
 }
 
@@ -1041,30 +1328,30 @@ class BassGuitar {
     constructor(ctx, dest) {
         this.ctx = ctx;
 
-        // Dual-stage drive for massive bass distortion
+        // Dual-stage drive for bass distortion
         this.drive = ctx.createWaveShaper();
         const n = 44100, curve = new Float32Array(n);
-        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve[i] = Math.tanh(x * 3.5); }
+        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve[i] = Math.tanh(x * 2.5); }
         this.drive.curve = curve;
         this.drive.oversample = '4x';
 
         this.drive2 = ctx.createWaveShaper();
         const curve2 = new Float32Array(n);
-        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve2[i] = Math.tanh(x * 2.0); }
+        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve2[i] = Math.tanh(x * 1.5); }
         this.drive2.curve = curve2;
         this.drive2.oversample = '2x';
 
         this.bassBoost = ctx.createBiquadFilter();
         this.bassBoost.type = 'lowshelf';
         this.bassBoost.frequency.value = 150;
-        this.bassBoost.gain.value = 9;
+        this.bassBoost.gain.value = 7;
 
         // Low-mid growl
         this.lowMidGrowl = ctx.createBiquadFilter();
         this.lowMidGrowl.type = 'peaking';
         this.lowMidGrowl.frequency.value = 800;
         this.lowMidGrowl.Q.value = 1.2;
-        this.lowMidGrowl.gain.value = 3;
+        this.lowMidGrowl.gain.value = 2;
 
         this.midCut = ctx.createBiquadFilter();
         this.midCut.type = 'peaking';
@@ -1072,12 +1359,11 @@ class BassGuitar {
         this.midCut.Q.value = 1.0;
         this.midCut.gain.value = -3;
 
-        // Sub enhancement
         this.subBoost = ctx.createBiquadFilter();
         this.subBoost.type = 'peaking';
         this.subBoost.frequency.value = 60;
         this.subBoost.Q.value = 1.5;
-        this.subBoost.gain.value = 5;
+        this.subBoost.gain.value = 3;
 
         this.cabLP = ctx.createBiquadFilter();
         this.cabLP.type = 'lowpass';
@@ -1091,7 +1377,7 @@ class BassGuitar {
         this.comp.release.value = 0.12;
 
         this.masterGain = ctx.createGain();
-        this.masterGain.gain.value = 0.30;
+        this.masterGain.gain.value = 0.25;
 
         this._noteInput = ctx.createGain();
         this._noteInput.gain.value = 1.0;
@@ -1194,89 +1480,89 @@ class BassGuitar {
     fadeIn() {
         this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
         this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, this.ctx.currentTime);
-        this.masterGain.gain.linearRampToValueAtTime(0.30, this.ctx.currentTime + 0.5);
+        this.masterGain.gain.linearRampToValueAtTime(0.25, this.ctx.currentTime + 0.5);
     }
 
     setOmTone() {
-        // Al Cisneros' massive Orange/Matamp bass tone - rich overtones
-        const n = 44100, curve = new Float32Array(n);
-        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve[i] = Math.tanh(x * 5.0); }
-        this.drive.curve = curve;
-        const c2 = new Float32Array(n);
-        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; c2[i] = Math.tanh(x * 2.5); }
-        this.drive2.curve = c2;
-        this.bassBoost.gain.value = 12;
-        this.subBoost.gain.value = 7;
-        this.midCut.gain.value = -1;
-        this.lowMidGrowl.gain.value = 4;
-        this.cabLP.frequency.value = 3500;
-        this.masterGain.gain.value = 0.36;
-    }
-
-    setSleepTone() {
-        // Fuzz bass matching Sleep's crushing guitar wall
-        const n = 44100, curve = new Float32Array(n);
-        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve[i] = Math.tanh(x * 6.0); }
-        this.drive.curve = curve;
-        const c2 = new Float32Array(n);
-        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; c2[i] = Math.tanh(x * 3.0); }
-        this.drive2.curve = c2;
-        this.bassBoost.gain.value = 10;
-        this.subBoost.gain.value = 6;
-        this.midCut.gain.value = -5;
-        this.lowMidGrowl.gain.value = 2;
-        this.cabLP.frequency.value = 2500;
-        this.masterGain.gain.value = 0.34;
-    }
-
-    setDoomTone() {
+        // Al Cisneros' Orange/Matamp bass tone
         const n = 44100, curve = new Float32Array(n);
         for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve[i] = Math.tanh(x * 3.5); }
         this.drive.curve = curve;
         const c2 = new Float32Array(n);
         for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; c2[i] = Math.tanh(x * 2.0); }
         this.drive2.curve = c2;
-        this.bassBoost.gain.value = 9;
+        this.bassBoost.gain.value = 10;
         this.subBoost.gain.value = 5;
-        this.midCut.gain.value = -3;
+        this.midCut.gain.value = -1;
         this.lowMidGrowl.gain.value = 3;
-        this.cabLP.frequency.value = 3200;
+        this.cabLP.frequency.value = 3500;
         this.masterGain.gain.value = 0.30;
     }
 
-    setFuzzTone() {
-        // Massive fuzz bass - woolly Muff-style overdrive
+    setSleepTone() {
+        // Fuzz bass matching Sleep's guitar wall
         const n = 44100, curve = new Float32Array(n);
-        for (let i = 0; i < n; i++) {
-            const x = (i*2)/n - 1;
-            curve[i] = Math.tanh(x * 7.0) * 0.85 + Math.sin(x * Math.PI) * 0.15;
-        }
+        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve[i] = Math.tanh(x * 4.5); }
         this.drive.curve = curve;
         const c2 = new Float32Array(n);
-        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; c2[i] = Math.tanh(x * 3.5); }
+        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; c2[i] = Math.tanh(x * 2.0); }
         this.drive2.curve = c2;
-        this.bassBoost.gain.value = 11;
-        this.subBoost.gain.value = 7;
-        this.midCut.gain.value = -2;
-        this.lowMidGrowl.gain.value = 4;
-        this.cabLP.frequency.value = 2800;
-        this.masterGain.gain.value = 0.32;
+        this.bassBoost.gain.value = 8;
+        this.subBoost.gain.value = 4;
+        this.midCut.gain.value = -4;
+        this.lowMidGrowl.gain.value = 2;
+        this.cabLP.frequency.value = 2500;
+        this.masterGain.gain.value = 0.28;
     }
 
-    set70sTone() {
-        // 70s bass — warm and round with more body
+    setDoomTone() {
         const n = 44100, curve = new Float32Array(n);
-        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve[i] = Math.tanh(x * 2.8); }
+        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve[i] = Math.tanh(x * 2.5); }
         this.drive.curve = curve;
         const c2 = new Float32Array(n);
         for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; c2[i] = Math.tanh(x * 1.5); }
         this.drive2.curve = c2;
         this.bassBoost.gain.value = 7;
-        this.subBoost.gain.value = 4;
-        this.midCut.gain.value = -1;
+        this.subBoost.gain.value = 3;
+        this.midCut.gain.value = -2;
+        this.lowMidGrowl.gain.value = 2;
+        this.cabLP.frequency.value = 3200;
+        this.masterGain.gain.value = 0.25;
+    }
+
+    setFuzzTone() {
+        // Woolly Muff-style fuzz bass
+        const n = 44100, curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+            const x = (i*2)/n - 1;
+            curve[i] = Math.tanh(x * 5.0) * 0.85 + Math.sin(x * Math.PI) * 0.15;
+        }
+        this.drive.curve = curve;
+        const c2 = new Float32Array(n);
+        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; c2[i] = Math.tanh(x * 2.5); }
+        this.drive2.curve = c2;
+        this.bassBoost.gain.value = 8;
+        this.subBoost.gain.value = 5;
+        this.midCut.gain.value = -2;
         this.lowMidGrowl.gain.value = 3;
+        this.cabLP.frequency.value = 2800;
+        this.masterGain.gain.value = 0.26;
+    }
+
+    set70sTone() {
+        // 70s bass — warm and round
+        const n = 44100, curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; curve[i] = Math.tanh(x * 2.0); }
+        this.drive.curve = curve;
+        const c2 = new Float32Array(n);
+        for (let i = 0; i < n; i++) { const x = (i*2)/n - 1; c2[i] = Math.tanh(x * 1.2); }
+        this.drive2.curve = c2;
+        this.bassBoost.gain.value = 6;
+        this.subBoost.gain.value = 3;
+        this.midCut.gain.value = -1;
+        this.lowMidGrowl.gain.value = 2;
         this.cabLP.frequency.value = 3500;
-        this.masterGain.gain.value = 0.30;
+        this.masterGain.gain.value = 0.25;
     }
 }
 
@@ -2080,6 +2366,12 @@ const SONGS = [
                 drums: "K--hS--hK-KhS--h|K--hS--hK-KhSOhH",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.D4, dur: 4 }, { f: N.R, dur: 2 },
+                    { f: N.F4, dur: 2 }, { f: N.A3, dur: 4 },
+                    { f: N.R, dur: 2 }, { f: N.G3, dur: 2 },
+                    { f: N.A3, dur: 2 },
+                ],
             },
             {
                 name: "MAMMOTH MARCH",
@@ -2099,6 +2391,12 @@ const SONGS = [
                 drums: "K-hKh-S-K-hKh-Sh|K-hKh-S-K-hKThTL",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.D4, dur: 2 }, { f: N.F4, dur: 1 }, { f: N.G4, dur: 1 },
+                    { f: N.R, dur: 2 }, { f: N.A4, dur: 2 },
+                    { f: N.Bb4, dur: 2 }, { f: N.A4, dur: 1 }, { f: N.G4, dur: 1 },
+                    { f: N.F4, dur: 2 }, { f: N.D4, dur: 2 },
+                ],
             },
             {
                 name: "ASCENDING",
@@ -2116,6 +2414,12 @@ const SONGS = [
                 drums: "K-H-S-H-KhH-S-Hh|K-H-S-H-KhH-SOH-",
                 padChord: [N.D3, N.F3, N.A3],
                 arp: null,
+                lead: [
+                    { f: N.D4, dur: 2 }, { f: N.F4, dur: 2 },
+                    { f: N.G4, dur: 2 }, { f: N.A4, dur: 2 },
+                    { f: N.Bb4, dur: 3 }, { f: N.A4, dur: 1 },
+                    { f: N.G4, dur: 2 }, { f: N.F4, dur: 2 },
+                ],
             },
             {
                 name: "COSMIC DRIFT",
@@ -2135,6 +2439,12 @@ const SONGS = [
                 drums: "K-R-S-R-KhR-S-Rr|K-R-S-R-KhR-SORB",
                 padChord: [N.D4, N.G4, N.Bb4],
                 arp: [N.D4, N.F4, N.G4, N.A4, N.Bb4, N.A4, N.G4, N.F4],
+                lead: [
+                    { f: N.A4, dur: 2 }, { f: N.Bb4, dur: 1 }, { f: N.D5, dur: 1 },
+                    { f: N.R, dur: 2 }, { f: N.A4, dur: 2 },
+                    { f: N.G4, dur: 3 }, { f: N.F4, dur: 1 },
+                    { f: N.D4, dur: 2 }, { f: N.R, dur: 2 },
+                ],
             },
             {
                 name: "NEBULA SEQUENCE",
@@ -2156,6 +2466,13 @@ const SONGS = [
                 drums: "K-RBS-RBKhRrS-RB|KkRBS-RBKhRrSOH-",
                 padChord: [N.A3, N.D4, N.E4, N.G4],
                 arp: [N.A4, N.D5, N.E5, N.G5, N.A5, N.G5, N.E5, N.D5],
+                lead: [
+                    { f: N.E5, dur: 1 }, { f: N.D5, dur: 1 },
+                    { f: N.A4, dur: 2 }, { f: N.R, dur: 1 }, { f: N.G4, dur: 1 },
+                    { f: N.A4, dur: 2 }, { f: N.B4, dur: 2 },
+                    { f: N.D5, dur: 2 }, { f: N.E5, dur: 1 }, { f: N.D5, dur: 1 },
+                    { f: N.A4, dur: 2 },
+                ],
             },
             {
                 name: "RE-ENTRY",
@@ -2174,6 +2491,12 @@ const SONGS = [
                 drums: "K-h-S-H-KhHkS-Hh|K-hkS-H-KhH-SOHT",
                 padChord: [N.D3, N.F3, N.A3],
                 arp: null,
+                lead: [
+                    { f: N.D4, dur: 3 }, { f: N.R, dur: 1 },
+                    { f: N.A4, dur: 2 }, { f: N.G4, dur: 2 },
+                    { f: N.F4, dur: 2 }, { f: N.D4, dur: 2 },
+                    { f: N.R, dur: 2 }, { f: N.G3, dur: 2 },
+                ],
             },
             {
                 name: "LEVIATHAN DIRGE",
@@ -2196,6 +2519,12 @@ const SONGS = [
                 drums: "K---h---S---h---|K---h---S---ThTL",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.D4, dur: 6 }, { f: N.R, dur: 4 },
+                    { f: N.Eb4, dur: 2, slide: true },
+                    { f: N.D4, dur: 4 }, { f: N.R, dur: 4 },
+                    { f: N.F4, dur: 2 }, { f: N.D4, dur: 2 },
+                ],
             },
         ]
     },
@@ -2219,6 +2548,12 @@ const SONGS = [
                 drums: "K-R-S-RrKhRBS-Rr|KkRBS-R-KhR-SOH-",
                 padChord: [N.E3, N.G3, N.B3, N.D4],
                 arp: [N.E4, N.G4, N.B4, N.D5, N.E5, N.D5, N.B4, N.G4],
+                lead: [
+                    { f: N.B4, dur: 2 }, { f: N.G4, dur: 1 }, { f: N.E4, dur: 1 },
+                    { f: N.D4, dur: 2 }, { f: N.E4, dur: 2 },
+                    { f: N.G4, dur: 3 }, { f: N.A4, dur: 1 },
+                    { f: N.B4, dur: 2 }, { f: N.R, dur: 2 },
+                ],
             },
             {
                 name: "GRAVITY WELL",
@@ -2237,6 +2572,12 @@ const SONGS = [
                 drums: "K-hKS-H-KkhKS-Hh|K-hKS-HkKkhKSOHT",
                 padChord: [N.E3, N.A3, N.B3],
                 arp: [N.E4, N.A4, N.B4, N.E5],
+                lead: [
+                    { f: N.E4, dur: 3 }, { f: N.R, dur: 1 },
+                    { f: N.G4, dur: 2 }, { f: N.A4, dur: 2 },
+                    { f: N.B4, dur: 3 }, { f: N.A4, dur: 1 },
+                    { f: N.G4, dur: 2 }, { f: N.E4, dur: 2 },
+                ],
             },
             {
                 name: "BLACK HOLE SUN",
@@ -2259,6 +2600,11 @@ const SONGS = [
                 drums: "K--hS-shK-KhS--h|K-khS-shK-KhS-TL",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.E4, dur: 4 }, { f: N.R, dur: 2 },
+                    { f: N.G4, dur: 2 }, { f: N.E4, dur: 4 },
+                    { f: N.R, dur: 2 }, { f: N.D4, dur: 2 },
+                ],
             },
             {
                 name: "ESCAPE VELOCITY",
@@ -2277,6 +2623,12 @@ const SONGS = [
                 drums: "K-H-S-HhKhHkS-Hh|K-HkS-HhKhH-SOH-",
                 padChord: [N.A3, N.D4, N.E4],
                 arp: [N.A4, N.D5, N.E5, N.A5, N.E5, N.D5],
+                lead: [
+                    { f: N.A4, dur: 2 }, { f: N.D5, dur: 1 }, { f: N.E5, dur: 1 },
+                    { f: N.R, dur: 2 }, { f: N.D5, dur: 2 },
+                    { f: N.A4, dur: 3 }, { f: N.G4, dur: 1 },
+                    { f: N.E4, dur: 2 }, { f: N.R, dur: 2 },
+                ],
             },
             {
                 name: "KOSMISCHE MUSIK",
@@ -2300,6 +2652,14 @@ const SONGS = [
                 drums: "K-RBS-RBKkRBS-RB|KkRBS-RBKkRBSOH-",
                 padChord: [N.D4, N.G4, N.A4, N.B4],
                 arp: [N.D5, N.G5, N.A5, N.B5, N.D5, N.A5, N.G5, N.E5],
+                lead: [
+                    { f: N.D5, dur: 1 }, { f: N.E5, dur: 1 },
+                    { f: N.G5, dur: 2 }, { f: N.A5, dur: 2 },
+                    { f: N.R, dur: 2 },
+                    { f: N.G5, dur: 1 }, { f: N.E5, dur: 1 },
+                    { f: N.D5, dur: 2 },
+                    { f: N.B4, dur: 2 }, { f: N.A4, dur: 2 },
+                ],
             },
         ]
     },
@@ -2328,6 +2688,11 @@ const SONGS = [
                 drums: "K--kh--sS---h---|K-k-h--sS---h-TL",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.D4, dur: 4 }, { f: N.R, dur: 4 },
+                    { f: N.F4, dur: 4 },
+                    { f: N.D4, dur: 2 }, { f: N.R, dur: 2 },
+                ],
             },
             {
                 name: "DRAGONAUT",
@@ -2354,6 +2719,12 @@ const SONGS = [
                 drums: "K-KhS-shK-KhS-sh|K-KhS-shKkKhShTL",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.R, dur: 2 }, { f: N.D4, dur: 2 },
+                    { f: N.F4, dur: 2 }, { f: N.G4, dur: 2 },
+                    { f: N.R, dur: 2 }, { f: N.Bb4, dur: 2 },
+                    { f: N.A4, dur: 2 }, { f: N.G4, dur: 2 },
+                ],
             },
             {
                 name: "HOLY MOUNTAIN",
@@ -2374,6 +2745,12 @@ const SONGS = [
                 drums: "K--hS-shK-KhS-kh|K-khS-shK--hShTL",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.D4, dur: 3 }, { f: N.F4, dur: 1 },
+                    { f: N.G4, dur: 4 },
+                    { f: N.R, dur: 2 }, { f: N.A4, dur: 2 },
+                    { f: N.G4, dur: 2 }, { f: N.D4, dur: 2 },
+                ],
             },
             {
                 name: "AQUARIAN",
@@ -2397,6 +2774,12 @@ const SONGS = [
                 drums: "K-H-S-HhK-HkSOH-|KkH-S-HhK-HkSOH-",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.D4, dur: 2 }, { f: N.F4, dur: 1 }, { f: N.G4, dur: 1 },
+                    { f: N.R, dur: 4 },
+                    { f: N.A4, dur: 2 }, { f: N.G4, dur: 2 },
+                    { f: N.F4, dur: 2 }, { f: N.D4, dur: 2 },
+                ],
             },
             {
                 name: "SONIC TITAN",
@@ -2415,6 +2798,11 @@ const SONGS = [
                 drums: "K--kh--sS--sh---|K-k-h--sS---h-TL",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.D4, dur: 8 },
+                    { f: N.R, dur: 4 },
+                    { f: N.Eb4, dur: 2 }, { f: N.D4, dur: 2 },
+                ],
             },
         ]
     },
@@ -2440,6 +2828,10 @@ const SONGS = [
                 drums: "K-R-r-RrK-R-r-Rr|KkR-r-R-K-R-r-RB",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.D4, dur: 4 }, { f: N.R, dur: 4 },
+                    { f: N.Eb4, dur: 4 }, { f: N.D4, dur: 4 },
+                ],
             },
             {
                 name: "AT GIZA",
@@ -2460,6 +2852,11 @@ const SONGS = [
                 drums: "K-RrR-RBKkRrs-RB|K-RrR-RBKkRrSORB",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.R, dur: 4 }, { f: N.D4, dur: 4 },
+                    { f: N.F4, dur: 2 }, { f: N.Eb4, dur: 2 },
+                    { f: N.D4, dur: 2 }, { f: N.R, dur: 2 },
+                ],
             },
             {
                 name: "STATE OF NON-RETURN",
@@ -2482,6 +2879,12 @@ const SONGS = [
                 drums: "K-R-S-RrKhRkS-RB|KkR-S-R-KhR-SORB",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.D4, dur: 4 },
+                    { f: N.Eb4, dur: 2 }, { f: N.G4, dur: 2 },
+                    { f: N.F4, dur: 2 }, { f: N.D4, dur: 2 },
+                    { f: N.Eb4, dur: 2 }, { f: N.D4, dur: 2 },
+                ],
             },
             {
                 name: "THEBES",
@@ -2501,6 +2904,12 @@ const SONGS = [
                 drums: "K-R-S-RrKhR-SOH-|KkR-S-RBKhR-SORB",
                 padChord: [N.D3, N.G3, N.Bb3],
                 arp: null,
+                lead: [
+                    { f: N.D4, dur: 2 }, { f: N.G4, dur: 1 }, { f: N.A4, dur: 1 },
+                    { f: N.Bb4, dur: 2 }, { f: N.A4, dur: 1 }, { f: N.G4, dur: 1 },
+                    { f: N.F4, dur: 2 }, { f: N.R, dur: 2 },
+                    { f: N.Eb4, dur: 2 }, { f: N.D4, dur: 2 },
+                ],
             },
             {
                 name: "MEDITATION IS THE PRACTICE OF DEATH",
@@ -2519,6 +2928,11 @@ const SONGS = [
                 drums: "K---r--sR---r---|K-k-r--sR---r-RB",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.D4, dur: 8 },
+                    { f: N.R, dur: 4 },
+                    { f: N.Eb4, dur: 2 }, { f: N.D4, dur: 2 },
+                ],
             },
         ]
     },
@@ -2551,6 +2965,13 @@ const SONGS = [
                 drums: "K--kh--sS--sh---|K-k-h--sS---ThTL",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.E4, dur: 6 }, { f: N.R, dur: 4 },
+                    { f: N.G4, dur: 2 }, { f: N.E4, dur: 4 },
+                    { f: N.R, dur: 4 },
+                    { f: N.G4, dur: 3 }, { f: N.F4, dur: 1 },
+                    { f: N.E4, dur: 4 }, { f: N.R, dur: 4 },
+                ],
             },
             {
                 name: "SLUDGE PROCESSIONAL",
@@ -2580,6 +3001,14 @@ const SONGS = [
                 drums: "K-KhS-shKkKhS-sh|K-KhS-shKkKhShTL",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.R, dur: 2 }, { f: N.E4, dur: 2 },
+                    { f: N.G4, dur: 2 }, { f: N.A4, dur: 1 }, { f: N.R, dur: 1 },
+                    { f: N.G4, dur: 2 }, { f: N.E4, dur: 2 },
+                    { f: N.R, dur: 2 }, { f: N.Bb4, dur: 2 },
+                    { f: N.A4, dur: 1 }, { f: N.G4, dur: 1 },
+                    { f: N.E4, dur: 1 }, { f: N.R, dur: 2 },
+                ],
             },
             {
                 name: "TAR PIT CRAWL",
@@ -2604,6 +3033,13 @@ const SONGS = [
                 drums: "K--kh--sS---h---|K-k-h-------ThTL",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.E4, dur: 8 }, { f: N.R, dur: 4 },
+                    { f: N.Bb4, dur: 2 }, { f: N.A4, dur: 2 },
+                    { f: N.E4, dur: 6 }, { f: N.R, dur: 2 },
+                    { f: N.F4, dur: 2 }, { f: N.E4, dur: 2 },
+                    { f: N.R, dur: 4 },
+                ],
             },
             {
                 name: "THE BLACKENING",
@@ -2628,6 +3064,12 @@ const SONGS = [
                 drums: "K--hS-shK-KhS-kh|K-khS-shK-KhSOhH",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.E4, dur: 3 }, { f: N.G4, dur: 1 },
+                    { f: N.A4, dur: 2 }, { f: N.E4, dur: 2 },
+                    { f: N.B4, dur: 3 }, { f: N.A4, dur: 1 },
+                    { f: N.G4, dur: 2 }, { f: N.E4, dur: 2 },
+                ],
             },
             {
                 name: "TECTONIC GRIND",
@@ -2651,6 +3093,12 @@ const SONGS = [
                 drums: "K-hKh-SkKkhKh-Sh|KkhKh-S-KkhKThTL",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.E4, dur: 4 }, { f: N.R, dur: 2 },
+                    { f: N.G4, dur: 2 }, { f: N.E4, dur: 4 },
+                    { f: N.R, dur: 2 },
+                    { f: N.F4, dur: 1 }, { f: N.E4, dur: 1 },
+                ],
             },
             {
                 name: "BURIAL RITES",
@@ -2670,6 +3118,11 @@ const SONGS = [
                 drums: "K--kh--sS---h---|K-k-h--sh---ShTL",
                 padChord: null,
                 arp: null,
+                lead: [
+                    { f: N.E4, dur: 8 }, { f: N.R, dur: 4 },
+                    { f: N.F4, dur: 2 }, { f: N.E4, dur: 4 },
+                    { f: N.R, dur: 6 },
+                ],
             },
         ]
     },
@@ -2699,6 +3152,12 @@ const SONGS = [
                 ],
                 drums: "K--kh--sS--sh---|K-k-h--sS---ThTL",
                 padChord: null, arp: null, organ: null,
+                lead: [
+                    { f: N.E4, dur: 4 }, { f: N.R, dur: 2 },
+                    { f: N.Bb4, dur: 2 },
+                    { f: N.A4, dur: 2 }, { f: N.G4, dur: 1 }, { f: N.E4, dur: 1 },
+                    { f: N.R, dur: 2 }, { f: N.E4, dur: 2 },
+                ],
             },
             {
                 name: "HAMMER OF THE RIFF",
@@ -2722,6 +3181,12 @@ const SONGS = [
                 ],
                 drums: "K-KhS-shKkKhS-sh|KkKhS-shKkKhSOhH",
                 padChord: null, arp: null,
+                lead: [
+                    { f: N.E4, dur: 2 }, { f: N.G4, dur: 1 }, { f: N.A4, dur: 1 },
+                    { f: N.Bb4, dur: 3 }, { f: N.A4, dur: 1 },
+                    { f: N.G4, dur: 2 }, { f: N.R, dur: 2 },
+                    { f: N.E4, dur: 2 }, { f: N.G4, dur: 2 },
+                ],
                 organ: { chord: [N.E3, N.G3, N.Bb3], drawbars: 'full' },
             },
             {
@@ -2744,6 +3209,14 @@ const SONGS = [
                 ],
                 drums: "K-H-S-HhKhHkS-Hh|KkH-S-HhKhH-SOH-",
                 padChord: null, arp: null,
+                lead: [
+                    { f: N.E4, dur: 1 }, { f: N.G4, dur: 1 },
+                    { f: N.A4, dur: 2 }, { f: N.R, dur: 2 },
+                    { f: N.B4, dur: 1 }, { f: N.A4, dur: 1 },
+                    { f: N.G4, dur: 2 }, { f: N.E4, dur: 2 },
+                    { f: N.D4, dur: 1 }, { f: N.E4, dur: 1 },
+                    { f: N.G4, dur: 2 },
+                ],
                 organ: { chord: [N.E3, N.A3, N.B3], drawbars: 'jazz' },
             },
             {
@@ -2762,6 +3235,12 @@ const SONGS = [
                 drums: "K-R-S-RrKhRkS-Rr|KkR-S-RrKhR-SORB",
                 padChord: [N.E3, N.G3, N.B3],
                 arp: null,
+                lead: [
+                    { f: N.E4, dur: 3 }, { f: N.G4, dur: 1 },
+                    { f: N.A4, dur: 2 }, { f: N.B4, dur: 2 },
+                    { f: N.D5, dur: 3 }, { f: N.B4, dur: 1 },
+                    { f: N.A4, dur: 2 }, { f: N.G4, dur: 2 },
+                ],
                 organ: { chord: [N.E3, N.G3, N.B3, N.D4], drawbars: 'full', leslie: 'fast' },
             },
             {
@@ -2786,6 +3265,12 @@ const SONGS = [
                 ],
                 drums: "K--hS-shKkKhS-kh|K-khS-shKkKhSOhH",
                 padChord: null, arp: null,
+                lead: [
+                    { f: N.E4, dur: 3 }, { f: N.R, dur: 1 },
+                    { f: N.G4, dur: 2 }, { f: N.A4, dur: 2 },
+                    { f: N.Bb4, dur: 2 }, { f: N.A4, dur: 2 },
+                    { f: N.G4, dur: 2 }, { f: N.E4, dur: 2 },
+                ],
                 organ: { chord: [N.E3, N.Bb3, N.D4], drawbars: 'doom', leslie: 'fast' },
             },
             {
@@ -2808,6 +3293,12 @@ const SONGS = [
                 ],
                 drums: "K--kh--sS--sh---|K-k-h--sS---ThTL",
                 padChord: null, arp: null,
+                lead: [
+                    { f: N.E4, dur: 8 }, { f: N.R, dur: 4 },
+                    { f: N.Bb4, dur: 3 }, { f: N.A4, dur: 1 },
+                    { f: N.G4, dur: 2 }, { f: N.E4, dur: 2 },
+                    { f: N.R, dur: 4 }, { f: N.E4, dur: 4 },
+                ],
                 organ: { chord: [N.E2, N.B2, N.E3], drawbars: 'default', leslie: 'slow' },
             },
         ]
@@ -2820,12 +3311,13 @@ const SONGS = [
 // =====================================================
 
 class SongSequencer {
-    constructor(guitar, bass, drums, spaceSynth, organ) {
+    constructor(guitar, bass, drums, spaceSynth, organ, leadGuitar) {
         this.guitar = guitar;
         this.bass = bass;
         this.drums = drums;
         this.spaceSynth = spaceSynth;
         this.organ = organ;
+        this.leadGuitar = leadGuitar;
         this.currentSong = 0;
         this.currentSection = 0;
         this.currentRepeat = 0;
@@ -2881,6 +3373,7 @@ class SongSequencer {
         this.bass.killAllNotes();
         this.spaceSynth.killAllNotes();
         if (this.organ) this.organ.killAllNotes();
+        if (this.leadGuitar) this.leadGuitar.killAllNotes();
         this.drums.killAllNotes();
 
         this.currentSong = index;
@@ -2993,6 +3486,14 @@ class SongSequencer {
             this.guitar.enableWah(section.wahRate || 2.0);
         } else {
             this.guitar.disableWah();
+        }
+
+        // Clean lead guitar — always on, syncs delay to tempo
+        if (this.leadGuitar) {
+            this.leadGuitar.fadeIn(2.0);
+            const beatDur = 60.0 / section.bpm;
+            // Sync delay to dotted eighth note for musical rhythm
+            this.leadGuitar.setDelay(beatDur * 0.75, 0.30);
         }
 
         // Visual mode
@@ -3132,6 +3633,18 @@ class SongSequencer {
             );
         }
 
+        // Schedule clean lead guitar melodic riffs
+        if (this.leadGuitar && section.lead) {
+            let leadDur = 0;
+            section.lead.forEach(note => {
+                const noteDuration = note.dur * beatDur;
+                if (note.f > 0) {
+                    this.leadGuitar.playNote(note.f, t + leadDur, noteDuration, note.slide || false);
+                }
+                leadDur += noteDuration;
+            });
+        }
+
         // Riff flash for visuals
         const flashDelay = Math.max(0, (t - now) * 1000);
         setTimeout(() => { this.riffFlashVal = 1.0; }, flashDelay);
@@ -3175,7 +3688,7 @@ class SongSequencer {
 
 
 // ===== INSTANCES =====
-let guitar, bass, drums, spaceSynth, organ, sequencer, mainBus;
+let guitar, bass, drums, spaceSynth, organ, leadGuitar, sequencer, mainBus;
 let isDoom = false;
 
 // ===== UI =====
@@ -3218,15 +3731,15 @@ window.addEventListener('keydown', (e) => {
         if (!isDoom) {
             isDoom = true;
             mainBus = audioContext.createGain();
-            mainBus.gain.value = 0.60;
+            mainBus.gain.value = 0.55;
 
-            // Master compressor/limiter — tighter for more punch
+            // Master compressor/limiter — balanced for clarity
             const masterComp = audioContext.createDynamicsCompressor();
-            masterComp.threshold.value = -8;
-            masterComp.knee.value = 3;
-            masterComp.ratio.value = 12;
-            masterComp.attack.value = 0.001;
-            masterComp.release.value = 0.10;
+            masterComp.threshold.value = -10;
+            masterComp.knee.value = 6;
+            masterComp.ratio.value = 8;
+            masterComp.attack.value = 0.002;
+            masterComp.release.value = 0.12;
 
             mainBus.connect(masterComp);
             masterComp.connect(audioContext.destination);
@@ -3237,8 +3750,9 @@ window.addEventListener('keydown', (e) => {
             drums = new DoomDrums(audioContext, mainBus);
             spaceSynth = new SpaceSynth(audioContext, mainBus);
             organ = new HammondOrgan(audioContext, mainBus);
+            leadGuitar = new CleanLeadGuitar(audioContext, mainBus);
 
-            sequencer = new SongSequencer(guitar, bass, drums, spaceSynth, organ);
+            sequencer = new SongSequencer(guitar, bass, drums, spaceSynth, organ, leadGuitar);
             sequencer.start();
 
             // Build song picker buttons
@@ -3278,6 +3792,7 @@ window.addEventListener('keydown', (e) => {
             if (bass) bass.fadeOut();
             if (spaceSynth) spaceSynth.fadeOut();
             if (organ) organ.fadeOut();
+            if (leadGuitar) leadGuitar.fadeOut();
             document.getElementById('doom-overlay').classList.remove('active');
             document.getElementById('song-picker').classList.remove('active');
             document.getElementById('doom-status').textContent = 'PRESS D FOR DOOM';
